@@ -1,19 +1,64 @@
 # draw.land
 
-Turn any place on Earth into a pen-plotter map. OpenStreetMap data, vector
-tiles and elevation are fetched, projected onto the paper and drawn as
-distinct layers, one per pen: buildings hatched, parks dotted, water waved,
-roads at their real width, contours, soundings, labels in single-stroke
-fonts. The output is one layered SVG in paper millimetres. What is drawn, and
-how, is a short JavaScript **profile**.
+**Maps of any place on Earth, drawn for pen plotters.** draw.land takes
+OpenStreetMap data, vector tiles and elevation, and draws them the way a pen
+would: buildings hatched, parks stippled, water in waves, roads at their real
+width, contours, depth soundings, names in single-stroke fonts. The result is
+one SVG in paper millimetres with **one layer per pen**, ready for an AxiDraw
+or any plotter, a laser or a cutter. How it looks is a short JavaScript
+**profile** you can write, change and share.
 
-![City Grain](https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/city-grain.webp)
+![City Grain: San Francisco's Marina, drawn by draw.land](https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/city-grain.webp)
 
-This repository is the engine and its command line, open source
-(AGPL-3.0). The web page at [draw.land](https://draw.land) is built on it: a
-map with a card to place, an editor, and the documentation at
-[draw.land/docs](https://draw.land/docs) (tutorial, concepts, every pattern,
-the full reference).
+## Two ways to use it
+
+| | |
+|---|---|
+| **Online, nothing to install** | [**draw.land**](https://draw.land): place a card on a map, pick one of the styles, edit its profile with autocomplete, download SVG, PNG, DXF or G-code, whole, per sheet or per pen. The [documentation](https://draw.land/docs) (gallery, tutorial, concepts, every pattern, the full reference) lives there too. |
+| **From code** | This repository, open source: the same engine as a command line, a Python package, a Node package and Rust crates. |
+
+```bash
+cargo install drawland-cli      # the drawland command
+pip install drawland            # Python 3.9+, the command included
+npm install drawland            # Node 18+, the command included (npx drawland)
+```
+
+```bash
+drawland map --address "Piazza Maggiore, Bologna" -o bologna.svg
+```
+
+## How it works
+
+```mermaid
+flowchart LR
+    P["profile.js<br/>(your style)"] --> S["drawland-script<br/>runs the script"]
+    S --> G["graph<br/>(JSON)"]
+    D["map data<br/>OpenStreetMap · vector tiles<br/>elevation · fonts · GeoJSON"] --> C
+    G --> C["drawland-core<br/>projection · fills · masks<br/>labels · plotter optimisation"]
+    C --> O["layered SVG<br/>one group per pen"]
+```
+
+A profile never touches geometry: it **describes** the map (which data, made
+into which areas and lines, filled with which patterns, stacked and masked
+how) and builds a graph of operations. The engine, in Rust, runs the graph on
+the data. That split is why the same profile draws the same map everywhere:
+
+| Piece | What it is | Where |
+|---|---|---|
+| `drawland-core` | The engine: projections (web Mercator, UTM, any PROJ string, your own), fills, masks, labels, sheets, plotter optimisation. No network, no files. | [crates/drawland-core](https://github.com/piLeoni/drawland/tree/main/crates/drawland-core) |
+| `drawland-script` | The profile language: a sandboxed JavaScript interpreter (Boa) and the library a profile calls; [`drawland.d.ts`](https://github.com/piLeoni/drawland/blob/main/crates/drawland-script/drawland.d.ts) describes it exactly | [crates/drawland-script](https://github.com/piLeoni/drawland/tree/main/crates/drawland-script) |
+| `drawland` | The two above plus everything a map reads: geocoding, Overpass, OpenFreeMap tiles, Terrarium elevation, fonts, datasets, all cached on disk | [crates/drawland](https://github.com/piLeoni/drawland/tree/main/crates/drawland) |
+| `drawland` command | `drawland map <profile>` | [crates/drawland-cli](https://github.com/piLeoni/drawland/tree/main/crates/drawland-cli) |
+| Python package | `import drawland` | [bindings/python](https://github.com/piLeoni/drawland/tree/main/bindings/python) |
+| Node package | `require('drawland')` | [bindings/node](https://github.com/piLeoni/drawland/tree/main/bindings/node) |
+| [draw.land](https://draw.land) | The web page: the engine compiled to WebAssembly, with a map, an editor and the styles | its own repository (not open source) |
+
+The patterns come from [penfill](https://github.com/piLeoni/penfill), the
+pen-and-ink terrain from [burin-map](https://github.com/piLeoni/burin-map),
+the vector tiles as polygons from
+[terramask](https://github.com/piLeoni/terramask), and stroke de-overlap
+from [deoverlap](https://github.com/piLeoni/deoverlap): sibling libraries,
+each with its own Python and Node packages.
 
 ## A profile
 
@@ -192,7 +237,7 @@ reads `city-grain.js` beside the profile.
 editor that knows TypeScript autocompletes and type-checks a profile against
 it (`// @ts-check` with the file in a `jsconfig.json`).
 
-## Layout
+## Repository layout
 
 | Path | Role |
 |---|---|
@@ -206,7 +251,7 @@ it (`// @ts-check` with the file in a `jsconfig.json`).
 | `docs/architecture/` | Architecture index for contributors and coding agents (`AGENTS.md`) |
 | `reference/python/` | The former Python pipeline, kept to read, not run |
 
-## Tests
+## Contributing
 
 ```bash
 cargo test
@@ -218,10 +263,14 @@ The pattern types in `drawland.d.ts` are written from penfill's catalogue:
 `cargo run -p drawland-script --example write_dts` (`cargo test` fails when
 they are stale).
 
-draw.land builds against sibling checkouts of its own libraries, developed
-alongside it: penfill in `../penfill` (fills), terramask in `../terramask`
-(map tiles as polygons, the sea, elevation bands), burin-map in
-`../burin-map` (pen-and-ink terrain) and deoverlap in `../deoverlap`.
+draw.land is developed against sibling checkouts of its own libraries:
+penfill in `../penfill` (fills), terramask in `../terramask` (map tiles as
+polygons, the sea, elevation bands), burin-map in `../burin-map` (pen-and-ink
+terrain) and deoverlap in `../deoverlap`. Without them,
+`python3 scripts/registry-deps.py` points the workspace at their published
+versions on crates.io, which is what CI does. Start reading at
+[AGENTS.md](https://github.com/piLeoni/drawland/blob/main/AGENTS.md) and
+[docs/architecture/INDEX.md](https://github.com/piLeoni/drawland/blob/main/docs/architecture/INDEX.md).
 
 ## License
 
