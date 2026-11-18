@@ -30,6 +30,22 @@ for run in "$@"; do
   done
 done
 
+# GitHub's macOS arm64 runners often never start: on an Apple silicon Mac,
+# what they would have built is built here.
+if [ "$(uname -s)-$(uname -m)" = "Darwin-arm64" ]; then
+  export MACOSX_DEPLOYMENT_TARGET=11.0
+  if [ ! -d "$work/all/wheel-aarch64-apple-darwin" ]; then
+    echo "→ the macOS arm64 wheel, here"
+    (cd "$root/bindings/python" && cp "$root/LICENSE" . && uvx maturin build --release --out "$work/all/wheel-aarch64-apple-darwin")
+  fi
+  if [ ! -d "$work/all/addon-aarch64-apple-darwin" ]; then
+    echo "→ the macOS arm64 Node addon, here"
+    (cd "$root/bindings/node" && npm install --silent && npx napi build --platform --release --target aarch64-apple-darwin --js native.js --dts native.d.ts)
+    mkdir -p "$work/all/addon-aarch64-apple-darwin"
+    cp "$root/bindings/node/drawland.darwin-arm64.node" "$work/all/addon-aarch64-apple-darwin/"
+  fi
+fi
+
 want_wheels="wheel-x86_64 wheel-aarch64 wheel-aarch64-apple-darwin wheel-x86_64-apple-darwin wheel-x64 wheel-sdist"
 want_addons="addon-aarch64-apple-darwin addon-x86_64-apple-darwin addon-x86_64-unknown-linux-gnu addon-aarch64-unknown-linux-gnu addon-x86_64-pc-windows-msvc"
 for a in $want_wheels $want_addons; do
