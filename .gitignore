@@ -33,3 +33,4 @@ target/
 bindings/node/node_modules/
 bindings/node/*.node
 bindings/python/dist/
+bindings/python/python/drawland/*.so
