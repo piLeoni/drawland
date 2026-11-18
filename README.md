@@ -51,6 +51,88 @@ drawland map lake-merritt.js -o lake-merritt.svg
 The script only builds a graph of operations; the engine runs it in Rust.
 Every `id` is a group in the SVG, a pen of its own.
 
+## Use
+
+Full documentation for the command line, Python, Node and Rust:
+**[draw.land/docs → For developers](https://draw.land/docs#developers)**.
+
+### Command line
+
+```bash
+cargo install drawland-cli        # or: pip install drawland · npm install -g drawland
+drawland map --address "Piazza Maggiore, Bologna" -o map.svg
+drawland map city-grain.js --lat 37.8771 --lng -122.2562 -o berkeley.svg
+```
+
+With no profile it draws the postcard, an example built in
+([crates/drawland/postcard.js](crates/drawland/postcard.js)).
+
+| Argument | Does |
+|---|---|
+| `profile` | A profile script (`.js`) or a saved graph (`.json`); default `postcard`, the example built in |
+| `--address` / `--lat --lng` | Where; overrides the profile's `output({...})` |
+| `--dump-graph` | Print the graph the profile builds, as JSON, and stop |
+| `-o` | Output SVG (default `map.svg`) |
+| `--per-layer` | Also one SVG per top-level layer (a file per pen) |
+| `--slices` | For a card cut into sheets: `whole`, `slices` or `both` (default) |
+| `--decimals` | Coordinate decimals in the SVG, 0 to 6 |
+| `--cache` | Overpass / Nominatim response cache (default `cache/`; Overpass replies reused by any map they cover) |
+| `--offline` | Use cached responses only |
+| `--refresh` | Fetch again even when cached |
+
+From a checkout: `./generate.sh "1730 Highland Pl, Berkeley, CA 94709"`
+writes `exports/<address>/map.svg`.
+
+### Python
+
+```bash
+pip install drawland
+```
+
+```python
+import drawland
+
+m = drawland.draw("city-grain.js", address="Piazza Maggiore, Bologna", progress=True)
+print(m.groups)                       # [(group id, strokes), …]: a group is a pen
+m.save("bologna.svg", per_layer=True)
+```
+
+[bindings/python](bindings/python) · [docs](https://draw.land/docs#dev-python)
+
+### Node
+
+```bash
+npm install drawland
+```
+
+```js
+const drawland = require('drawland')
+
+const map = await drawland.draw({ profile: 'city-grain.js', lat: 37.8771, lng: -122.2562 })
+map.save('berkeley.svg', { perLayer: true })
+```
+
+[bindings/node](bindings/node) · [docs](https://draw.land/docs#dev-node)
+
+### Rust
+
+```toml
+[dependencies]
+drawland = "0.2"
+```
+
+```rust
+use drawland::{Drawer, Place, Profile, Settings};
+
+let map = Drawer::new(Settings::default())
+    .draw(&Profile::read("city-grain.js".as_ref())?, &Place::at(37.8771, -122.2562), &())?;
+map.save("map.svg".as_ref(), Default::default())?;
+```
+
+`drawland` downloads and caches; `drawland-script` only turns a script into
+a graph; `drawland-core` draws a graph from bytes you hand it, with no I/O.
+[crates/drawland](crates/drawland) · [docs](https://draw.land/docs#dev-rust)
+
 ## Gallery
 
 Every picture below is an SVG written by `drawland map`. Each style is a
@@ -89,43 +171,6 @@ editor, and draw it here, anywhere.
 - **For the machine**: merge, simplify, sort, de-overlap and a hand-drawn
   tremble; one SVG per pen; a card cut into sheets for a poster in tiles.
 
-## Use
-
-The command line installs from crates.io:
-
-```bash
-cargo install drawland-cli
-drawland map --address "Piazza Maggiore, Bologna" -o map.svg
-```
-
-With no profile it draws the postcard, an example built in
-([crates/drawland-cli/postcard.js](crates/drawland-cli/postcard.js)). From a
-checkout:
-
-```bash
-./generate.sh "1730 Highland Pl, Berkeley, CA 94709"
-# → exports/1730_highland_pl_berkeley_ca_94709/map.svg
-```
-
-or directly:
-
-```bash
-cargo run --release -p drawland-cli -- map --address "Piazza Maggiore, Bologna" -o map.svg
-cargo run --release -p drawland-cli -- map configs/contours.js --lat 46.5 --lng 11.85
-```
-
-| Argument | Does |
-|---|---|
-| `profile` | A profile script (`.js`) or a saved graph (`.json`); default `postcard`, the example built in |
-| `--address` / `--lat --lng` | Where; overrides the profile's `output({...})` |
-| `--dump-graph` | Print the graph the profile builds, as JSON, and stop |
-| `-o` | Output SVG (default `map.svg`) |
-| `--cache` | Overpass / Nominatim response cache (default `cache/`; Overpass replies in `cache/overpass/`, reused by any map they cover) |
-| `--offline` | Use cached responses only |
-| `--refresh` | Fetch datasets again even when cached |
-| `--slices` | For a card cut into sheets: `whole`, `slices` or `both` (default) |
-| `--per-layer` | Also one SVG per top-level layer (a file per pen) |
-
 ## Profiles
 
 A profile is a JavaScript file that calls the draw.land library: where the
@@ -153,7 +198,9 @@ it (`// @ts-check` with the file in a `jsconfig.json`).
 |---|---|
 | `crates/drawland-core` | The graph and its runner, projection, OSM and tiles → features, fills, compose, SVG. No I/O. |
 | `crates/drawland-script` | Profile scripts: the library and its JavaScript engine (Boa), script → graph |
-| `crates/drawland-cli` | The `drawland` binary: geocoding, Overpass, vector tiles, cache |
+| `crates/drawland` | The library that draws a map: the script, the downloads and cache, the engine; the command line's code |
+| `crates/drawland-cli` | The `drawland` binary |
+| `bindings/python`, `bindings/node` | `pip install drawland`, `npm install drawland` |
 | `configs/` | Example profiles |
 | `docs/gallery/` | The README's pictures (drawn by the CLI from draw.land's styles) |
 | `docs/architecture/` | Architecture index for contributors and coding agents (`AGENTS.md`) |
@@ -163,6 +210,8 @@ it (`// @ts-check` with the file in a `jsconfig.json`).
 
 ```bash
 cargo test
+(cd bindings/node && npm install && npm run build && npm test)
+(cd bindings/python && maturin develop && pytest)
 ```
 
 The pattern types in `drawland.d.ts` are written from penfill's catalogue:

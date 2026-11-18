@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/drawland-core", "crates/drawland-script", "crates/drawland-cli"]
+members = ["crates/drawland-core", "crates/drawland-script", "crates/drawland", "crates/drawland-cli", "bindings/python", "bindings/node"]
 resolver = "2"
 
 [workspace.package]
@@ -12,6 +12,7 @@ homepage = "https://draw.land"
 [workspace.dependencies]
 drawland-core = { path = "crates/drawland-core", version = "0.2.0" }
 drawland-script = { path = "crates/drawland-script", version = "0.2.0" }
+drawland = { path = "crates/drawland", version = "0.2.0" }
 penfill = { path = "../penfill", version = "0.4.0", default-features = false }
 # Pen-and-ink terrain drawing: its own engine, its own expression trees.
 burin-map-core = { path = "../burin-map/crates/burin-map-core", version = "0.1.0" }

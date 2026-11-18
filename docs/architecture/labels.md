@@ -31,7 +31,7 @@ Outputs used by profiles:
 
 ## Google fonts
 
-The host downloads CSS + font files (the CLI: `drawland-cli/src/google_fonts.rs`). Core parses TTF with `ttf_parser`.
+The host downloads CSS + font files (here: `crates/drawland/src/fonts.rs`). Core parses TTF with `ttf_parser`.
 
 Outline glyphs: filled silhouette uses **non-zero** winding across all contours (`text::glyph_silhouette`); ink uses silhouette rings, not raw overlapping contours. The tests in `text.rs` hold the cases.
 

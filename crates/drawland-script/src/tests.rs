@@ -113,10 +113,10 @@ fn a_script_draws_contours_in_a_loop_over_elevation_bands() {
 
 #[test]
 fn the_postcard_script_renders_without_osm_data() {
-    // drawland-cli/postcard.js is the CLI's default and the library's living
+    // drawland/postcard.js is the CLI's default and the library's living
     // example: it must load, survive JSON, and come out of the whole pipeline
     // (no features, so parks and water are empty, but every group is there).
-    let g = evaluate(include_str!("../../drawland-cli/postcard.js")).unwrap();
+    let g = evaluate(include_str!("../../drawland/postcard.js")).unwrap();
     assert_eq!(
         g.groups(),
         [

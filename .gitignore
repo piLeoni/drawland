@@ -28,3 +28,8 @@ tmp/
 
 # Rust
 target/
+
+# Bindings
+bindings/node/node_modules/
+bindings/node/*.node
+bindings/python/dist/

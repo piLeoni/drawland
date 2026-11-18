@@ -1,4 +1,5 @@
-//! Download font bytes for Google Fonts (for labels with `origin: "google"`).
+//! Font bytes: Google Fonts (labels with `origin: "google"`) and single-stroke
+//! font files (SVG/JHF).
 
 use drawland_core::google_fonts::pick_url_from_css;
 use drawland_core::text::parse_google_font_key;
@@ -8,7 +9,7 @@ use drawland_core::text::parse_google_font_key;
 /// than a file per subset.
 const CSS_UA: &str = "drawland";
 
-pub fn fetch(key: &str) -> Result<Vec<u8>, String> {
+pub fn fetch_google(key: &str) -> Result<Vec<u8>, String> {
     let (family, weight, italic) = parse_google_font_key(key).ok_or_else(|| format!("bad google font key {:?}", key))?;
     let family_q = family.replace(' ', "+");
     let axis = if italic { "ital,wght" } else { "wght" };
@@ -28,4 +29,12 @@ pub fn fetch(key: &str) -> Result<Vec<u8>, String> {
         .into_body()
         .read_to_vec()
         .map_err(|e| format!("google font {:?}: {e}", family))
+}
+pub fn fetch_stroke(url: &str) -> Result<Vec<u8>, String> {
+    ureq::get(url)
+        .call()
+        .map_err(|e| format!("stroke font {:?}: {e}", url))?
+        .into_body()
+        .read_to_vec()
+        .map_err(|e| format!("stroke font {:?}: {e}", url))
 }

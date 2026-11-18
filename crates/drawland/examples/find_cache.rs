@@ -15,7 +15,7 @@ fn quote_plus(s: &str) -> String {
 }
 
 fn main() {
-    let text = std::fs::read_to_string("crates/drawland-cli/postcard.js").unwrap();
+    let text = std::fs::read_to_string("crates/drawland/postcard.js").unwrap();
     let grammar = drawland_script::evaluate(&text).unwrap();
     let output = Output::new(&grammar.output, (-122.256196, 37.8771145));
     let keys = grammar.osm_keys();

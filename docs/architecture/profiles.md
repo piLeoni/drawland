@@ -12,7 +12,7 @@ Authoring format for maps: declarative calls into the draw.land library that bui
 | `crates/drawland-script/src/lib.rs` | Boa sandbox, natives, `evaluate()` / `evaluate_in(source, &Host)` / `evaluate_draft` |
 | `crates/drawland-script/drawland.d.ts` | Type reference for editor + docs |
 | `configs/*.js` | Example profiles |
-| `crates/drawland-cli/postcard.js` | The CLI's built-in default |
+| `crates/drawland/postcard.js` | The built-in default (`drawland::POSTCARD`) |
 
 ## Execution model
 

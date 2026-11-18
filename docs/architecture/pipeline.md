@@ -41,7 +41,7 @@ Features → areas (`MultiPolygon`) / lines (`geom::Lines`) / fills (lines from 
 
 | Front end | Compile profile | Download | Run |
 |-----------|-----------------|----------|-----|
-| CLI | `drawland_script::evaluate_in` | `drawland-cli` + terramask fetch | `grammar_run` in-process |
+| CLI, Python, Node | `drawland_script::evaluate_in` | `drawland::Drawer` + terramask fetch | `grammar_run` in-process |
 
 The draw.land web page is another front end, in its own repository: it compiles the same crates to WASM and hands the engine the bytes its workers fetch.
 

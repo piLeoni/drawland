@@ -1,10 +1,10 @@
 ---
 description: Authoring structure and commenting conventions for draw.land profile scripts (configs and the CLI's postcard)
-globs: configs/*.js,crates/drawland-cli/postcard.js
+globs: configs/*.js,crates/drawland/postcard.js
 alwaysApply: false
 ---
 
-# Profile script conventions (`configs/*.js`, `crates/drawland-cli/postcard.js`)
+# Profile script conventions (`configs/*.js`, `crates/drawland/postcard.js`)
 
 Keep profile scripts declarative, scannable, and organized so every visual parameter is defined at the top and all geometry/drawing logic flows linearly below without magic numbers.
 

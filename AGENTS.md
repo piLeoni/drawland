@@ -23,9 +23,11 @@ Do **not** load every architecture file for small edits. Do **not** treat `refer
 |-------|------|
 | `drawland-core` | Graph validation, geometry, fills, compose, SVG — no network/files |
 | `drawland-script` | Boa interpreter + `library.js` → graph |
-| `drawland-cli` | `drawland map`: geocode, Overpass, tiles, cache |
+| `drawland` | The host as a library: geocode, Overpass, tiles, terrain, fonts, cache → `Drawer::draw`; `cli::run` is the command line |
+| `drawland-cli` | The `drawland` binary (`main` over `drawland::cli::run`) |
+| `bindings/python`, `bindings/node` | `pip install drawland`, `npm install drawland`: thin wrappers over the `drawland` crate |
 
-Example profiles: `configs/`; the CLI's built-in default: `crates/drawland-cli/postcard.js`. The web page's presets are not here.
+Example profiles: `configs/`; the built-in default: `crates/drawland/postcard.js`. The web page's presets are not here.
 
 ## Maintenance (substantial tasks)
 
@@ -50,6 +52,10 @@ change to every surface in the same step unless asked.
 
 ```bash
 cargo test
+(cd bindings/node && npm run build && npm test)
+(cd bindings/python && maturin develop && pytest)
 ```
+
+Releases: push, let `.github/workflows/build.yml` build the wheels and addons, then `scripts/publish.sh <run-id>` (crates.io, PyPI, npm).
 
 After changing a sibling library (`../penfill`, `../terramask`, `../burin-map`, `../deoverlap`), build and test there first, then rebuild draw.land.

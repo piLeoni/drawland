@@ -19,7 +19,7 @@ See [pipeline.md](pipeline.md).
 | Pipeline & units | [pipeline.md](pipeline.md) | `output.rs`, `projection.rs`, `frame.rs`, `warp.rs`, `units.rs`, `profile.rs` |
 | Graph & execution | [grammar-engine.md](grammar-engine.md) | `grammar.rs`, `grammar_run.rs`, `geom.rs`, `optimize.rs` |
 | Profile language | [profiles.md](profiles.md) | `drawland-script/`, `drawland.d.ts`, `configs/` |
-| Map data & CLI I/O | [cli-data.md](cli-data.md) | `drawland-cli/`, `osm.rs`, `tiles.rs`, `osm_cache.rs`, `geojson.rs` |
+| Map data, host & bindings | [cli-data.md](cli-data.md) | `crates/drawland/` (library + CLI), `drawland-cli/`, `bindings/python`, `bindings/node`, `.github/workflows/build.yml`, `scripts/`, `osm.rs`, `tiles.rs`, `osm_cache.rs`, `geojson.rs` |
 | Fills & strokes | [fills-compose.md](fills-compose.md) | `fill.rs`, `budget.rs`, `optimize.rs`, `profile.rs`, `svg.rs`, penfill catalogue, `drawland-script/src/catalog_dts.rs` |
 | Isoline blob fills (design) | [isoline-blob-fills.md](isoline-blob-fills.md) | penfill (new generator), `fill.rs`, compose masks |
 | Terrain (burin) | [terrain-burin.md](terrain-burin.md) | `terrain.rs`, `contours.rs`, `burin.*` in profiles |

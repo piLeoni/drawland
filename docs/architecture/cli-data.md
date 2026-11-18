@@ -2,11 +2,11 @@
 
 ## Purpose
 
-`drawland-cli` is the front end in this repository: geocoding, HTTP fetch, disk cache, then `grammar_run`. Another host (the draw.land web page) does its own fetching and hands the core the same bytes.
+The `drawland` crate (`crates/drawland`) is the host in this repository: geocoding, HTTP fetch, disk cache, then `grammar_run`. `Drawer::draw(profile, place, progress)` is the whole of it; the `drawland` binary (`drawland-cli`, a `main` over `drawland::cli::run`), the Python package and the Node package (`bindings/`) all call it. Another host (the draw.land web page) does its own fetching and hands the core the same bytes.
 
 ## Entry
 
-`crates/drawland-cli/src/main.rs` — subcommand `map`:
+`crates/drawland/src/cli.rs` (`cli::run(args)`, clap) — subcommand `map`:
 
 - Profile: `.js` (evaluate script) or `.json` (saved graph)
 - Place: `--address` (Nominatim) or `--lat` / `--lng`
@@ -17,13 +17,27 @@
 
 `generate.sh` wraps common invocations.
 
+## Library API (`crates/drawland/src/lib.rs`)
+
+- `Profile::read(path)` (`.js` script with its folder, or `.json` graph), `Profile::script(source, dir)`, `Profile::postcard()` (`POSTCARD`, `crates/drawland/postcard.js`).
+- `Place { address, lat, lng }`, `Settings { cache, offline, refresh }`.
+- `Drawer::graph` runs the script only (an address is geocoded first, and again if the script asks `world` about its output's address); `Drawer::draw` = graph + `draw_graph` (locate, `gather` per page and per view, `run_with`). Styles a view names are `<name>.js` in the profile's folder.
+- `Map { title, svg, groups, slices }`, `Map::files(ExportOptions)` / `Map::save(out, …)` (`sheets::export_svg_files`).
+- Progress: any `Progress` (`&()` for none; `Term` paints the board on stderr).
+
+## Bindings (`bindings/`)
+
+- `bindings/python` (pyo3 abi3, maturin; module `drawland._drawland`, wrapper `python/drawland/`): `draw`, `graph`, `Map`, `POSTCARD`, `cli`; the `drawland` console script. `draw` runs with the GIL released.
+- `bindings/node` (napi-rs 3; `native.js`/`native.d.ts` generated, `index.js`/`index.d.ts` the package's face, `cli.js` its bin): `draw` is an `AsyncTask` (a Promise), `graph` sync.
+- Both are packaged by `.github/workflows/build.yml` for macOS arm64/x64, Linux x64/arm64 and Windows x64, with the sibling libraries from crates.io (`scripts/registry-deps.py`); `scripts/publish.sh` publishes crates.io, PyPI and npm from a run's artifacts.
+
 ## OSM / Overpass
 
 `osm.rs` — parse Overpass JSON into `Feature`, tag matching via `select.rs`.
 
 `osm_cache.rs` — request shaping: padded ground, cache keys, what a stored reply must cover. The same rules serve any host's cache.
 
-CLI HTTP: `drawland-cli/src/osm_http.rs`. Policy constants (endpoints, timeouts) live in `output.rs`, for every host.
+HTTP: `crates/drawland/src/http.rs`. Policy constants (endpoints, timeouts) live in `output.rs`, for every host.
 
 ## Vector tiles
 
@@ -53,11 +67,11 @@ Terrarium PNGs for elevation — terramask. Consumed by `terrain.rs` / burin.
 
 ## Google fonts
 
-CLI: `drawland-cli/src/google_fonts.rs`. Core: `google_fonts.rs`, `text.rs`.
+Fetch: `crates/drawland/src/fonts.rs` (`fetch_google`). Core: `google_fonts.rs`, `text.rs`.
 
 ## Stroke fonts (labels / `lines.text`)
 
-CLI: `drawland-cli/src/stroke_fonts.rs` fetches catalog or custom URLs from `stroke_font_keys_in_grammar`. Core: `stroke_font.rs`, `text.rs`.
+`crates/drawland/src/fonts.rs` (`fetch_stroke`) fetches catalog or custom URLs from `stroke_font_keys_in_grammar`. Core: `stroke_font.rs`, `text.rs`.
 
 ## Cache layout
 

@@ -1,6 +1,6 @@
 [package]
 name = "drawland-cli"
-description = "draw.land map stage: fetch OSM, render the layered SVG"
+description = "draw.land's command line: `drawland map` draws a profile at a place as a layered pen-plotter SVG"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,20 +8,11 @@ repository.workspace = true
 homepage.workspace = true
 readme = "../../README.md"
 keywords = ["plotter", "map", "openstreetmap", "svg", "cli"]
-categories = ["graphics", "science::geo"]
+categories = ["graphics", "science::geo", "command-line-utilities"]
 
 [[bin]]
 name = "drawland"
 path = "src/main.rs"
 
 [dependencies]
-drawland-core = { workspace = true }
-drawland-script = { workspace = true }
-clap = { workspace = true }
-geo = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-ureq = { workspace = true }
-terramask = { workspace = true, features = ["fetch", "dem"] }
-sha1_smol = { workspace = true }
-libc = "0.2"
+drawland = { workspace = true }

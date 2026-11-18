@@ -1,0 +1,31 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "drawland"
+description = "OpenStreetMap drawn as layered pen-plotter SVGs, styled by a short JavaScript profile"
+readme = "README.md"
+license = "AGPL-3.0-only"
+requires-python = ">=3.9"
+keywords = ["plotter", "pen plotter", "map", "openstreetmap", "svg", "cartography", "axidraw", "generative art"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Artistic Software",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://draw.land"
+Documentation = "https://draw.land/docs#dev-python"
+Repository = "https://github.com/piLeoni/drawland"
+
+[project.scripts]
+drawland = "drawland.__main__:main"
+
+[tool.maturin]
+python-source = "python"
+module-name = "drawland._drawland"

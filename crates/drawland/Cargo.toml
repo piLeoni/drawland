@@ -1,0 +1,25 @@
+[package]
+name = "drawland"
+description = "draw.land: a profile and a place in, the layered pen-plotter map SVG out (downloads and cache included)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["plotter", "map", "openstreetmap", "svg", "cartography"]
+categories = ["graphics", "science::geo"]
+
+[dependencies]
+drawland-core = { workspace = true }
+drawland-script = { workspace = true }
+clap = { workspace = true }
+geo = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ureq = { workspace = true }
+terramask = { workspace = true, features = ["fetch", "dem"] }
+sha1_smol = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
