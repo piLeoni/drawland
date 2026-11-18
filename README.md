@@ -1,25 +1,93 @@
 # draw.land
 
-Turn any address into a pen-plotter postcard map. OpenStreetMap data is
-fetched, projected onto the paper and drawn as distinct layers (buildings
-hatched, parks dotted, water waved, roads at their real width). The output is
-one layered SVG in paper millimetres; what is drawn, and how, is a short
-JavaScript profile. Area patterns come from
-[penfill](https://github.com/piLeoni/penfill).
+Turn any place on Earth into a pen-plotter map. OpenStreetMap data, vector
+tiles and elevation are fetched, projected onto the paper and drawn as
+distinct layers, one per pen: buildings hatched, parks dotted, water waved,
+roads at their real width, contours, soundings, labels in single-stroke
+fonts. The output is one layered SVG in paper millimetres. What is drawn, and
+how, is a short JavaScript **profile**.
 
-The profile can also prepare the strokes for the machine (merge, simplify,
-sort, a hand-drawn tremble). Sending the SVG to a plotter is left to the
-plotter's own software.
+![City Grain](docs/gallery/city-grain.webp)
 
-The map can be laid flat in web Mercator, UTM or any PROJ projection (a pole
-at the centre of the page, for one), or in a projection the profile writes
-itself as a function of the page (`warp: { remap }`).
+This repository is the engine and its command line, open source
+(AGPL-3.0). The web page at [draw.land](https://draw.land) is built on it: a
+map with a card to place, an editor, and the documentation at
+[draw.land/docs](https://draw.land/docs) (tutorial, concepts, every pattern,
+the full reference).
 
-This repository is the engine and its command line. The web page at
-[draw.land](https://draw.land), with its editor, its presets and the
-documentation at [draw.land/docs](https://draw.land/docs), is built on it; the
-styles in its gallery are plain profiles, so any of them can be copied from
-there and drawn here.
+## A profile
+
+```js
+title("Lake Merritt")
+output({ lat: 37.802, lng: -122.263, width: "6in", height: "4in", scale: "1:8000" })
+
+const bldg = features.tiles("buildings")
+const buildings = areas.polygons(bldg)
+const parks = areas.polygons(features.tiles("parks", "grass"))
+const water = areas.polygons(features.tiles("water"))
+const roads = modules.roads({ from: features.tiles("roads", "paths") })
+
+draw({ id: "water", from: fills.fill({ in: water, pattern: "waves", spacing: "0.8mm" }) })
+draw({ id: "shore", from: lines.rings(water) })
+draw({ id: "parks", from: fills.fill({ in: parks, pattern: "dots", spacing: "0.6mm" }) })
+draw({ id: "roads", from: roads.outlines })
+draw({ id: "trails", from: roads.trails, stroke: { style: "dotted", mark: "0.1mm", gap: "0.5mm" } })
+draw({ id: "roofs", from: fills.fill({ in: buildings, per: "feature", pattern: "lines", angle: 45, spacing: "0.6mm" }) })
+draw({ id: "buildings", from: lines.rings(buildings) })
+
+// The roads clear the dots and the waves under them; a building clears everything under it.
+compose.mask({ from: roads.area, occludes: ["parks", "water"] })
+compose.mask({ from: buildings, occludes: ["parks", "water", "roads", "trails"] })
+// The water keeps the dots out, and a hair round it keeps them off the shore line.
+compose.mask({ from: areas.grow(water, "0.3mm"), occludes: ["parks"] })
+```
+
+```bash
+drawland map lake-merritt.js -o lake-merritt.svg
+```
+
+<img src="docs/gallery/tutorial-04-masks.webp" alt="Lake Merritt, from the profile above" width="600">
+
+The script only builds a graph of operations; the engine runs it in Rust.
+Every `id` is a group in the SVG, a pen of its own.
+
+## Gallery
+
+Every picture below is an SVG written by `drawland map`. Each style is a
+plain profile: open it on [draw.land](https://draw.land), save it from the
+editor, and draw it here, anywhere.
+
+<table>
+<tr><td width="50%" valign="top"><img src="docs/gallery/city-grain.webp" alt="City Grain"><br><b>City Grain</b><br>Every surface its own pattern, tree crowns as isoline stacks, the ground in burin hatching, names that clear what they cross.</td><td width="50%" valign="top"><img src="docs/gallery/karl-the-fog.webp" alt="Karl the Fog"><br><b>Karl the Fog</b><br>City Grain under cumulus: the clouds are a pattern, their footprint masks the city and, moved down-sun, is stippled as their shadow.</td></tr>
+<tr><td width="50%" valign="top"><img src="docs/gallery/napkin-sketch.webp" alt="Napkin Sketch"><br><b>Napkin Sketch</b><br>Very little drawn, all of it loosened by a hand-drawn tremble at the end.</td><td width="50%" valign="top"><img src="docs/gallery/beton-brut.webp" alt="Béton Brut"><br><b>Béton Brut</b><br>A heavy nib: weight from offset passes side by side, never a wider pen.</td></tr>
+<tr><td width="50%" valign="top"><img src="docs/gallery/salt-and-stone.webp" alt="Salt and Stone"><br><b>Salt and Stone</b><br>Nothing built, all burin: contours, a concentric coast, currents that curl as the flow turns.</td><td width="50%" valign="top"><img src="docs/gallery/tree-line.webp" alt="Tree Line"><br><b>Tree Line</b><br>Contours as features with their heights as tags, coloured low to high, every fifth named along the line.</td></tr>
+<tr><td width="50%" valign="top"><img src="docs/gallery/lead-line.webp" alt="Lead Line"><br><b>Lead Line</b><br>A sounding chart for any shore: depths read at points, dotted isobaths.</td><td width="50%" valign="top"><img src="docs/gallery/schoolroom-atlas.webp" alt="Schoolroom Atlas"><br><b>Schoolroom Atlas</b><br>A coloured physical map: hypsometric tints, depths, a graticule round an atlas plate.</td></tr>
+<tr><td width="50%" valign="top"><img src="docs/gallery/dead-reckoning.webp" alt="Dead Reckoning"><br><b>Dead Reckoning</b><br>A graticule worked out by the script, traced through the projection point by point.</td><td width="50%" valign="top"><img src="docs/gallery/square-one.webp" alt="Square One"><br><b>Square One</b><br>A city map's lettered grid, your places numbered on it, and an index: all arithmetic on the page.</td></tr>
+<tr><td width="50%" valign="top"><img src="docs/gallery/looking-glass.webp" alt="Looking Glass"><br><b>Looking Glass</b><br>Japan in a projection written in the script (`warp: { remap }`): distance from the centre on a log scale.</td><td width="50%" valign="top"><img src="docs/gallery/true-north.webp" alt="True North"><br><b>True North</b><br>The Arctic from above in polar stereographic, a PROJ string centred on the pole.</td></tr>
+<tr><td width="50%" valign="top"><img src="docs/gallery/shaky-ground.webp" alt="Shaky Ground"><br><b>Shaky Ground</b><br>Live data: the last 30 days of quakes from the USGS feed, sized by magnitude, inked by depth.</td><td width="50%" valign="top"><img src="docs/gallery/rush-hour.webp" alt="Rush Hour"><br><b>Rush Hour</b><br>Boston's T with every train where it is now, from GeoJSON lines and a plain-JSON API.</td></tr>
+<tr><td width="50%" valign="top"><img src="docs/gallery/red-pencil.webp" alt="Red Pencil"><br><b>Red Pencil</b><br>A GeoJSON of your own over a quiet base map, for two pens that never touch.</td><td width="50%" valign="top"><img src="docs/gallery/cookie-cutter.webp" alt="Cookie Cutter"><br><b>Cookie Cutter</b><br>A state's silhouette as a die-cut card, one hatch per height belt, the border on its own layer for the knife.</td></tr>
+<tr><td width="50%" valign="top"><img src="docs/gallery/sixty-five-north.webp" alt="65°N 18°W"><br><b>65°N 18°W</b><br>Four places in Iceland, each at its own scale, drawn as views into four corners of one card.</td></tr>
+</table>
+
+## What a profile can do
+
+- **Map data**: vector tiles (OpenFreeMap), any Overpass query, GeoJSON and
+  plain JSON from a file or a live URL, elevation and depth as contours,
+  soundings or bands.
+- **Patterns**: every [penfill](https://github.com/piLeoni/penfill) fill
+  (hatches, dots, waves, isoline stacks, clouds, marble…) and
+  [burin-map](https://github.com/piLeoni/burin-map) terrain in pen and ink.
+- **Projections**: web Mercator, UTM, any PROJ string (a pole on the page),
+  or one written in the script as a function of the page
+  (`warp: { remap }`); fisheye, twirl and wave warps.
+- **Composition**: masks that clear exactly the layers they name, offset
+  double lines for weight, labels that knock out what they cross, views of
+  other places drawn into a rectangle of the page.
+- **The frame**: a script reads its page and the ground under it
+  (`page`, `world`, `world.toPage`, `page.toWorld`) to lay out grids,
+  graticules, indexes and titles.
+- **For the machine**: merge, simplify, sort, de-overlap and a hand-drawn
+  tremble; one SVG per pen; a card cut into sheets for a poster in tiles.
 
 ## Use
 
@@ -87,6 +155,7 @@ it (`// @ts-check` with the file in a `jsconfig.json`).
 | `crates/drawland-script` | Profile scripts: the library and its JavaScript engine (Boa), script → graph |
 | `crates/drawland-cli` | The `drawland` binary: geocoding, Overpass, vector tiles, cache |
 | `configs/` | Example profiles |
+| `docs/gallery/` | The README's pictures (drawn by the CLI from draw.land's styles) |
 | `docs/architecture/` | Architecture index for contributors and coding agents (`AGENTS.md`) |
 | `reference/python/` | The former Python pipeline, kept to read, not run |
 

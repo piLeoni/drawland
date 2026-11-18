@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "drawland-cli"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "clap",
  "drawland-core",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "drawland-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "approx",
  "burin-map-core",
@@ -640,7 +640,7 @@ dependencies = [
 
 [[package]]
 name = "drawland-script"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "boa_engine",
  "burin-map-script",
