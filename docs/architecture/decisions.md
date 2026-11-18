@@ -6,6 +6,14 @@ Short rationale for choices that are easy to misread from code alone. Add entrie
 
 JavaScript never holds geometry. A host can load the interpreter and the engine separately (the web page loads the interpreter only when a script runs), and the CLI can dump and load JSON graphs.
 
+## The library is Rust; every language is a face
+
+`drawland-graph` holds every function a style calls, with its checks, defaults and messages. JavaScript (`library.js`, a thin function of the library's calls), Python, Node and Rust are faces of it, so none can drift and none is second-class: a style can be written in the language of the program it lives in, and the graph is the same. JavaScript/TypeScript stays the form of a shareable style (it runs sandboxed, on the web page too). A face orchestrates only what takes a function in its own language (`view`, `remap`), with the graph's primitives, so the library never calls back into a language.
+
+## TypeScript by blanking the types
+
+A `.ts` profile has its types replaced by blanks (`drawland-ts`, swc's fast strip), not transpiled: every line and column of the JavaScript is the TypeScript's, so errors point where the author wrote. What would need code (`enum`, `namespace`) is an error. On the web page the stripper is a WASM module of its own, loaded only for TypeScript, so the interpreter stays small.
+
 ## Vector tiles default; Overpass optional
 
 Tiles are fast CDN fetches with OpenMapTiles classes; Overpass retained for tags tiles lack and for comparison presets. Tile logic centralized in terramask + `tiles.rs`.

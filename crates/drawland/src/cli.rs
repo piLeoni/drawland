@@ -39,10 +39,10 @@ const POSTCARD_NAME: &str = "postcard";
 enum Command {
     /// Build the map SVG for a place.
     Map {
-        /// Profile: a script (.js) or a saved graph (.json). `postcard`, the
+        /// Profile: a script (.js, .ts) or a saved graph (.json). `postcard`, the
         /// default, is an example built in. A view a script draws in a style
-        /// by name (`view({ … }, "city-grain")`) reads `city-grain.js` beside
-        /// the profile.
+        /// by name (`view({ … }, "city-grain")`) reads `city-grain.js` (or
+        /// `.ts`) beside the profile.
         #[arg(default_value = POSTCARD_NAME)]
         profile: PathBuf,
         /// Print the graph the profile builds, as JSON, and stop.

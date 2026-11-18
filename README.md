@@ -15,7 +15,7 @@ or any plotter, a laser or a cutter. How it looks is a short JavaScript
 | | |
 |---|---|
 | **Online, nothing to install** | [**draw.land**](https://draw.land): place a card on a map, pick one of the styles, edit its profile with autocomplete, download SVG, PNG, DXF or G-code, whole, per sheet or per pen. The [documentation](https://draw.land/docs) (gallery, tutorial, concepts, every pattern, the full reference) lives there too. |
-| **From code** | This repository, open source: the same engine as a command line, a Python package, a Node package and Rust crates. |
+| **From code** | This repository, open source (MIT): the same engine as a command line, and a library you call from **JavaScript or TypeScript**, **Python**, **Node** or **Rust**. Write the style as a profile script, or build it in your own language. |
 
 ```bash
 cargo install drawland-cli      # the drawland command
@@ -31,27 +31,39 @@ drawland map --address "Piazza Maggiore, Bologna" -o bologna.svg
 
 ```mermaid
 flowchart LR
-    P["profile.js<br/>(your style)"] --> S["drawland-script<br/>runs the script"]
-    S --> G["graph<br/>(JSON)"]
+    JS["profile.js / .ts"] --> L
+    PY["Python<br/>drawland.Graph()"] --> L
+    NODE["Node<br/>new drawland.Graph()"] --> L
+    RS["Rust<br/>drawland_graph::Graph"] --> L
+    L["drawland-graph<br/>the library:<br/>checks, defaults, messages"] --> G["graph<br/>(JSON)"]
     D["map data<br/>OpenStreetMap · vector tiles<br/>elevation · fonts · GeoJSON"] --> C
     G --> C["drawland-core<br/>projection · fills · masks<br/>labels · plotter optimisation"]
     C --> O["layered SVG<br/>one group per pen"]
 ```
 
-A profile never touches geometry: it **describes** the map (which data, made
+A style never touches geometry: it **describes** the map (which data, made
 into which areas and lines, filled with which patterns, stacked and masked
 how) and builds a graph of operations. The engine, in Rust, runs the graph on
-the data. That split is why the same profile draws the same map everywhere:
+the data, so the same style draws the same map everywhere.
+
+The library a style calls (`features.tiles`, `areas.union`, `fills.fill`,
+`compose.mask`…) is written once, in Rust (`drawland-graph`). JavaScript,
+TypeScript, Python, Node and Rust are faces of that one library, equal: the
+same functions, options, checks and error messages, and the same graph out.
+A **profile** is a JavaScript or TypeScript file: the shareable form of a
+style, the one draw.land's editor and gallery use.
 
 | Piece | What it is | Where |
 |---|---|---|
-| `drawland-core` | The engine: projections (web Mercator, UTM, any PROJ string, your own), fills, masks, labels, sheets, plotter optimisation. No network, no files. | [crates/drawland-core](https://github.com/piLeoni/drawland/tree/main/crates/drawland-core) |
-| `drawland-script` | The profile language: a sandboxed JavaScript interpreter (Boa) and the library a profile calls; [`drawland.d.ts`](https://github.com/piLeoni/drawland/blob/main/crates/drawland-script/drawland.d.ts) describes it exactly | [crates/drawland-script](https://github.com/piLeoni/drawland/tree/main/crates/drawland-script) |
-| `drawland` | The two above plus everything a map reads: geocoding, Overpass, OpenFreeMap tiles, Terrarium elevation, fonts, datasets, all cached on disk | [crates/drawland](https://github.com/piLeoni/drawland/tree/main/crates/drawland) |
+| `drawland-graph` | The library: every function a style calls, its checks, defaults and messages, building the graph. Called by name from JS and Python, with typed methods from Rust | [crates/drawland-graph](https://github.com/piLeoni/drawland/tree/main/crates/drawland-graph) |
+| `drawland-core` | The engine: runs the graph. Projections (web Mercator, UTM, any PROJ string, your own), fills, masks, labels, sheets, plotter optimisation. No network, no files | [crates/drawland-core](https://github.com/piLeoni/drawland/tree/main/crates/drawland-core) |
+| `drawland-script` | Profiles: a sandboxed JavaScript interpreter (Boa) running the library's JavaScript face; [`drawland.d.ts`](https://github.com/piLeoni/drawland/blob/main/crates/drawland-script/drawland.d.ts) describes it exactly | [crates/drawland-script](https://github.com/piLeoni/drawland/tree/main/crates/drawland-script) |
+| `drawland-ts` | TypeScript profiles: the types taken out, every line and column kept | [crates/drawland-ts](https://github.com/piLeoni/drawland/tree/main/crates/drawland-ts) |
+| `drawland` | All of the above plus everything a map reads: geocoding, Overpass, OpenFreeMap tiles, Terrarium elevation, fonts, datasets, cached on disk | [crates/drawland](https://github.com/piLeoni/drawland/tree/main/crates/drawland) |
 | `drawland` command | `drawland map <profile>` | [crates/drawland-cli](https://github.com/piLeoni/drawland/tree/main/crates/drawland-cli) |
-| Python package | `import drawland` | [bindings/python](https://github.com/piLeoni/drawland/tree/main/bindings/python) |
-| Node package | `require('drawland')` | [bindings/node](https://github.com/piLeoni/drawland/tree/main/bindings/node) |
-| [draw.land](https://draw.land) | The web page: the engine compiled to WebAssembly, with a map, an editor and the styles | its own repository (not open source) |
+| Python package | `import drawland`: draw a profile, or build the graph in Python | [bindings/python](https://github.com/piLeoni/drawland/tree/main/bindings/python) |
+| Node package | `require('drawland')`: the same, from Node, with TypeScript types | [bindings/node](https://github.com/piLeoni/drawland/tree/main/bindings/node) |
+| [draw.land](https://draw.land) | The web page: the engine compiled to WebAssembly, with a map, an editor and the styles | its own repository |
 
 The patterns come from [penfill](https://github.com/piLeoni/penfill), the
 pen-and-ink terrain from [burin-map](https://github.com/piLeoni/burin-map),
@@ -114,7 +126,7 @@ With no profile it draws the postcard, an example built in
 
 | Argument | Does |
 |---|---|
-| `profile` | A profile script (`.js`) or a saved graph (`.json`); default `postcard`, the example built in |
+| `profile` | A profile script (`.js`, `.ts`) or a saved graph (`.json`); default `postcard`, the example built in |
 | `--address` / `--lat --lng` | Where; overrides the profile's `output({...})` |
 | `--dump-graph` | Print the graph the profile builds, as JSON, and stop |
 | `-o` | Output SVG (default `map.svg`) |
@@ -128,11 +140,16 @@ With no profile it draws the postcard, an example built in
 From a checkout: `./generate.sh "1730 Highland Pl, Berkeley, CA 94709"`
 writes `exports/<address>/map.svg`.
 
+A profile can be **TypeScript**: `drawland map style.ts` takes the types out
+and runs it, with errors at the line and column you wrote.
+
 ### Python
 
 ```bash
 pip install drawland
 ```
+
+Draw a profile:
 
 ```python
 import drawland
@@ -142,6 +159,22 @@ print(m.groups)                       # [(group id, strokes), …]: a group is a
 m.save("bologna.svg", per_layer=True)
 ```
 
+or build the style in Python, with the same library:
+
+```python
+g = drawland.Graph()
+g.output(lat=37.802, lng=-122.263, width="6in", height="4in", scale="1:8000")
+water = g.areas.polygons(g.features.tiles("water"))
+buildings = g.areas.polygons(g.features.tiles("buildings"))
+g.draw(id="water", from_=g.fills.fill(in_=water, pattern="waves", spacing="0.8mm"))
+g.draw(id="buildings", from_=g.lines.rings(buildings))
+g.compose.mask(from_=buildings, occludes=["water"])
+drawland.draw(g).save("lake.svg")
+```
+
+Options are keywords with the library's own names (`in_`, `from_` for `in`,
+`from`); a `view` or a `remap` warp takes a Python function, and a GeoJSON
+dataset can be any object with `__geo_interface__` (a GeoDataFrame).
 [bindings/python](https://github.com/piLeoni/drawland/tree/main/bindings/python) · [docs](https://draw.land/docs#dev-python)
 
 ### Node
@@ -153,8 +186,16 @@ npm install drawland
 ```js
 const drawland = require('drawland')
 
-const map = await drawland.draw({ profile: 'city-grain.js', lat: 37.8771, lng: -122.2562 })
-map.save('berkeley.svg', { perLayer: true })
+// A profile
+const map = await drawland.draw({ profile: 'city-grain.js', lat: 37.8053, lng: -122.4436 })
+map.save('marina.svg', { perLayer: true })
+
+// or the graph built here: the library as a profile sees it, typed
+const g = new drawland.Graph()
+g.output({ lat: 37.802, lng: -122.263, width: '6in', height: '4in', scale: '1:8000' })
+const water = g.areas.polygons(g.features.tiles('water'))
+g.draw({ id: 'water', from: g.fills.fill({ in: water, pattern: 'waves', spacing: '0.8mm' }) })
+;(await drawland.draw({ profile: g })).save('lake.svg')
 ```
 
 [bindings/node](https://github.com/piLeoni/drawland/tree/main/bindings/node) · [docs](https://draw.land/docs#dev-node)
@@ -163,20 +204,28 @@ map.save('berkeley.svg', { perLayer: true })
 
 ```toml
 [dependencies]
-drawland = "0.2"
+drawland = "0.3"         # draws: the library, the downloads, the engine
+drawland-graph = "0.3"   # builds a graph, nothing else
 ```
 
 ```rust
 use drawland::{Drawer, Place, Profile, Settings};
+use drawland_graph::{obj, Graph};
 
-let map = Drawer::new(Settings::default())
-    .draw(&Profile::read("city-grain.js".as_ref())?, &Place::at(37.8771, -122.2562), &())?;
-map.save("map.svg".as_ref(), Default::default())?;
+let mut g = Graph::new(None);
+g.output(obj! { "lat" => 37.802, "lng" => -122.263, "width" => "6in", "height" => "4in", "scale" => "1:8000" })?;
+let w = g.features().tiles(&["water"])?;
+let water = g.areas().polygons(&w)?;
+let waves = g.fills().fill(obj! { "in" => &water, "pattern" => "waves", "spacing" => "0.8mm" })?;
+g.draw(obj! { "id" => "water", "from" => &waves })?;
+
+let map = Drawer::new(Settings::default()).draw(&Profile::graph(g.finish()?), &Place::default(), &())?;
+map.save("lake.svg".as_ref(), Default::default())?;
 ```
 
-`drawland` downloads and caches; `drawland-script` only turns a script into
-a graph; `drawland-core` draws a graph from bytes you hand it, with no I/O.
-[crates/drawland](https://github.com/piLeoni/drawland/tree/main/crates/drawland) · [docs](https://draw.land/docs#dev-rust)
+A profile file draws the same way: `Profile::read("city-grain.js".as_ref())?`.
+`drawland-core` alone draws a graph from bytes you fetched yourself, with no I/O.
+[crates/drawland-graph](https://github.com/piLeoni/drawland/tree/main/crates/drawland-graph) · [docs](https://draw.land/docs#dev-rust)
 
 ## Gallery
 
@@ -218,7 +267,7 @@ editor, and draw it here, anywhere.
 
 ## Profiles
 
-A profile is a JavaScript file that calls the draw.land library: where the
+A profile is a JavaScript or TypeScript file that calls the draw.land library: where the
 map is and on what paper (`output({...})`), which map data to read
 (`features.tiles("buildings")`, `features.osm({ leisure: "park" })`), what to
 make of it (`areas.*`, `lines.*`, `fills.fill`, `modules.roads()`), and how to
@@ -231,18 +280,23 @@ data: heights and the like come back as features with tags
 
 A profile can draw another place into a rectangle of its page in a style
 named by its script: `view({ id, at, size, lat, lng, scale }, "city-grain")`
-reads `city-grain.js` beside the profile.
+reads `city-grain.js` (or `.ts`) beside the profile, from JavaScript, Python
+or Node alike.
 
 `crates/drawland-script/drawland.d.ts` is the library's exact description: an
 editor that knows TypeScript autocompletes and type-checks a profile against
-it (`// @ts-check` with the file in a `jsconfig.json`).
+it (a `.ts` profile with `/// <reference path="drawland.d.ts" />`, or a `.js`
+one with `// @ts-check`). The Node package carries the same types for
+`Graph`.
 
 ## Repository layout
 
 | Path | Role |
 |---|---|
-| `crates/drawland-core` | The graph and its runner, projection, OSM and tiles → features, fills, compose, SVG. No I/O. |
-| `crates/drawland-script` | Profile scripts: the library and its JavaScript engine (Boa), script → graph |
+| `crates/drawland-graph` | The library: what a style calls, building the graph (`src/library.rs`) |
+| `crates/drawland-core` | The graph's runner: projection, OSM and tiles → features, fills, compose, SVG. No I/O. |
+| `crates/drawland-script` | Profile scripts: the JavaScript interpreter (Boa) and the library's JavaScript face (`src/library.js`) |
+| `crates/drawland-ts` | TypeScript profiles, their types blanked out |
 | `crates/drawland` | The library that draws a map: the script, the downloads and cache, the engine; the command line's code |
 | `crates/drawland-cli` | The `drawland` binary |
 | `bindings/python`, `bindings/node` | `pip install drawland`, `npm install drawland` |
@@ -274,4 +328,4 @@ versions on crates.io, which is what CI does. Start reading at
 
 ## License
 
-AGPL-3.0-only.
+MIT. Use it, change it, ship it, in anything.

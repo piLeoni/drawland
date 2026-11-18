@@ -1,0 +1,15 @@
+[package]
+name = "drawland-ts"
+description = "TypeScript to JavaScript for draw.land profiles, by taking the types out: every line and column kept"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["typescript", "strip-types", "plotter", "map"]
+categories = ["development-tools"]
+
+[dependencies]
+swc_ts_fast_strip = "60"
+swc_common = "27"

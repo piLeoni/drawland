@@ -1,0 +1,18 @@
+[package]
+name = "drawland-graph"
+description = "draw.land's library: build the graph of a pen-plotter map, from Rust, JavaScript or Python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["plotter", "map", "openstreetmap", "svg", "cartography"]
+categories = ["graphics", "science::geo"]
+
+[dependencies]
+drawland-core = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+drawland-script = { workspace = true }

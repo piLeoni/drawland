@@ -25,6 +25,27 @@ export declare class Map {
   save(path: string, options?: ExportFiles | undefined | null): Array<string>
 }
 
+export declare class NativeGraph {
+  constructor(lat?: number | undefined | null, lng?: number | undefined | null, dir?: string | undefined | null)
+  call(name: string, args: string): string
+  prop(name: string): string
+  get(of: string, part: string): string
+  describe(v: string): string
+  outputBegin(spec: string): boolean
+  outputWarps(done: string): void
+  remapGrid(warp: string, n: number): string
+  remapMesh(n: number, columns: number, rows: number, points: string, went: string): string
+  viewBegin(spec: string): void
+  viewEnd(ok: boolean): string
+  /**
+   * A view drawn in a JavaScript (or TypeScript) style by name, read
+   * beside the graph's `dir`.
+   */
+  viewStyle(spec: string, name: string): string
+  /** The graph built, as its JSON. The graph is finished. */
+  finish(): string
+}
+
 /**
  * The command line, `drawland map …`, on `argv` (without the program's
  * name); the exit code.
@@ -40,6 +61,10 @@ export interface DrawOptions {
   profile?: string
   /** A script's text, instead of a file. */
   script?: string
+  /** The script is TypeScript. */
+  typescript?: boolean
+  /** A graph's JSON, as `Graph.finish` gives it. */
+  graph?: string
   /** Where a `script` reads beside it (datasets, styles its views name). */
   dir?: string
   lat?: number
@@ -64,6 +89,9 @@ export interface ExportFiles {
   decimals?: number
 }
 
+/** Every function of the library, as a script names it (`areas.union`). */
+export declare function functions(): Array<string>
+
 /** The graph a profile builds, as JSON text: no map data is downloaded. */
 export declare function graph(options?: DrawOptions | undefined | null): string
 
@@ -72,8 +100,17 @@ export interface Group {
   strokes: number
 }
 
+/**
+ * The library's JavaScript face (`library.js`), the one a profile's
+ * interpreter runs: `index.js` builds `Graph` on it.
+ */
+export declare const LIBRARY: string
+
 /** The built-in postcard's script: the profile drawn when none is given. */
 export declare const POSTCARD: string
+
+/** The values a script reads rather than calls (`page.width`). */
+export declare function properties(): Array<string>
 
 export interface SvgFile {
   /** `""` the whole map, `"-r1c1"` a sheet, `"-roads"` a layer. */

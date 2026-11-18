@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "drawland"
 description = "OpenStreetMap drawn as layered pen-plotter SVGs, styled by a short JavaScript profile"
 readme = "README.md"
-license = "AGPL-3.0-only"
+license = "MIT"
 requires-python = ">=3.9"
 keywords = ["plotter", "pen plotter", "map", "openstreetmap", "svg", "cartography", "axidraw", "generative art"]
 classifiers = [

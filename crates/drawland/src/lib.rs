@@ -22,6 +22,7 @@ mod http;
 mod term;
 
 pub use drawland_core;
+pub use drawland_graph;
 pub use drawland_core::sheets::{ExportOptions, SliceExport};
 pub use drawland_script;
 pub use term::Term;
@@ -84,24 +85,36 @@ impl Default for Settings {
 /// reads `city-grain.js` there), or a graph already built.
 #[derive(Clone, Debug)]
 pub enum Profile {
-    Script { source: String, dir: PathBuf },
+    /// A script: JavaScript, or TypeScript (its types taken out first).
+    Script { source: String, dir: PathBuf, typescript: bool },
     Graph(Box<Grammar>),
 }
 
 impl Profile {
-    /// A script (`.js`) or a saved graph (`.json`) from a file.
+    /// A script (`.js`, `.ts`) or a saved graph (`.json`) from a file.
     pub fn read(path: &Path) -> Result<Profile, String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("json")) {
+        let ext = |x: &str| path.extension().is_some_and(|e| e.eq_ignore_ascii_case(x));
+        if ext("json") {
             let g = Grammar::from_json(&text).map_err(|e| format!("{}: {e}", path.display()))?;
             return Ok(Profile::Graph(Box::new(g)));
         }
-        Ok(Profile::Script { source: text, dir: dir_of(path) })
+        Ok(Profile::Script { source: text, dir: dir_of(path), typescript: ext("ts") || ext("mts") })
     }
 
-    /// A script's text; what it reads beside it is read from `dir`.
+    /// A script's text (JavaScript); what it reads beside it is read from `dir`.
     pub fn script(source: &str, dir: &Path) -> Profile {
-        Profile::Script { source: source.to_string(), dir: dir.to_path_buf() }
+        Profile::Script { source: source.to_string(), dir: dir.to_path_buf(), typescript: false }
+    }
+
+    /// A TypeScript script's text.
+    pub fn typescript(source: &str, dir: &Path) -> Profile {
+        Profile::Script { source: source.to_string(), dir: dir.to_path_buf(), typescript: true }
+    }
+
+    /// A graph built in Rust (`drawland_graph::Graph`) or loaded.
+    pub fn graph(graph: Grammar) -> Profile {
+        Profile::Graph(Box::new(graph))
     }
 
     /// The built-in postcard, reading beside it from the working directory.
@@ -173,9 +186,9 @@ impl Drawer {
     /// and so is one the profile's own output names when the script asks
     /// `world` about it.
     pub fn graph(&self, profile: &Profile, place: &Place, progress: &dyn Progress) -> Result<Grammar, String> {
-        let source = match profile {
+        let (source, typescript) = match profile {
             Profile::Graph(g) => return Ok((**g).clone()),
-            Profile::Script { source, .. } => source,
+            Profile::Script { source, typescript, .. } => (source, *typescript),
         };
         let mut lookup = |address: &str| -> Result<(f64, f64), String> {
             let task = Task::begin(progress, "geocode", None, "geocode", 0, "");
@@ -193,7 +206,7 @@ impl Drawer {
             _ => None,
         };
         let task = Task::begin(progress, "script", None, "script", 0, "");
-        match evaluate(source, profile.dir(), at, &mut lookup) {
+        match evaluate(source, typescript, profile.dir(), at, &mut lookup) {
             Ok(g) => {
                 let nodes: usize = g.sections.iter().map(|(_, d)| d.len()).sum();
                 task.ok(&format!("{nodes} nodes · {} draws", g.draw.len()));
@@ -366,16 +379,12 @@ impl Drawer {
 /// script run again there.
 fn evaluate(
     source: &str,
+    typescript: bool,
     dir: &Path,
     at: Option<(f64, f64)>,
     lookup: &mut dyn FnMut(&str) -> Result<(f64, f64), String>,
 ) -> Result<Grammar, String> {
-    let dir = dir.to_path_buf();
-    let styles: drawland_script::Styles = Rc::new(move |name: &str| {
-        let path = dir.join(format!("{name}.js"));
-        std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))
-    });
-    let host = drawland_script::Host { place: at, styles: Some(styles) };
+    let host = drawland_script::Host { place: at, styles: Some(styles_in(dir)), typescript };
     match drawland_script::evaluate_in(source, &host) {
         Err(drawland_script::ScriptError { address: Some(address), .. }) if at.is_none() => {
             let found = lookup(&address)?;
@@ -384,6 +393,21 @@ fn evaluate(
         }
         other => other.map_err(|e| e.to_string()),
     }
+}
+
+/// The styles a view names, read beside the profile: `name.js`, or
+/// `name.ts` (its types taken out).
+pub fn styles_in(dir: &Path) -> drawland_script::Styles {
+    let dir = dir.to_path_buf();
+    Rc::new(move |name: &str| {
+        let js = dir.join(format!("{name}.js"));
+        let ts = dir.join(format!("{name}.ts"));
+        match (std::fs::read_to_string(&js), std::fs::read_to_string(&ts)) {
+            (Ok(source), _) => Ok(source),
+            (Err(_), Ok(source)) => drawland_script::strip_types(&source).map_err(|e| format!("{}: {e}", ts.display())),
+            (Err(e), Err(_)) => Err(format!("{}: {e}", js.display())),
+        }
+    })
 }
 
 /// Everything one graph reads, downloaded: what its `Inputs` are made of.

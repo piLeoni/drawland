@@ -2,9 +2,11 @@
 //! place in, the layered SVG out, downloading and caching what the map reads:
 //! the same `drawland` crate the command line is. `index.js` wraps these.
 
+use drawland::drawland_graph::{self as dg, Arg};
 use drawland::{Drawer, ExportOptions, Place, Profile, Settings, SliceExport, Term};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use std::cell::RefCell;
 use std::path::PathBuf;
 
 /// Where and what to draw, and how to download.
@@ -15,6 +17,10 @@ pub struct DrawOptions {
     pub profile: Option<String>,
     /// A script's text, instead of a file.
     pub script: Option<String>,
+    /// The script is TypeScript.
+    pub typescript: Option<bool>,
+    /// A graph's JSON, as `Graph.finish` gives it.
+    pub graph: Option<String>,
     /// Where a `script` reads beside it (datasets, styles its views name).
     pub dir: Option<String>,
     pub lat: Option<f64>,
@@ -55,11 +61,14 @@ pub struct SvgFile {
 }
 
 fn profile(o: &DrawOptions) -> std::result::Result<Profile, String> {
-    match (&o.profile, &o.script) {
-        (Some(_), Some(_)) => Err("give a profile path or a script, not both".into()),
-        (Some(p), None) => Profile::read(p.as_ref()),
-        (None, Some(s)) => Ok(Profile::script(s, o.dir.as_deref().unwrap_or(".").as_ref())),
-        (None, None) => Ok(Profile::postcard()),
+    let dir = o.dir.as_deref().unwrap_or(".");
+    match (&o.profile, &o.script, &o.graph) {
+        (_, _, Some(g)) => drawland::drawland_core::grammar::Grammar::from_json(g).map(Profile::graph).map_err(|e| e.to_string()),
+        (Some(_), Some(_), _) => Err("give a profile path or a script, not both".into()),
+        (Some(p), None, _) => Profile::read(p.as_ref()),
+        (None, Some(s), _) if o.typescript.unwrap_or(false) => Ok(Profile::typescript(s, dir.as_ref())),
+        (None, Some(s), _) => Ok(Profile::script(s, dir.as_ref())),
+        (None, None, _) => Ok(Profile::postcard()),
     }
 }
 
@@ -190,6 +199,166 @@ pub fn graph(options: Option<DrawOptions>) -> Result<String> {
 fn clone_place(o: &DrawOptions) -> DrawOptions {
     DrawOptions { lat: o.lat, lng: o.lng, address: o.address.clone(), ..DrawOptions::default() }
 }
+
+// ---------------------------------------------------------------------------
+// NativeGraph: the library's calls, for `index.js` to build `Graph` on with
+// the interpreter's own `library.js`. Values cross as JSON with handles
+// marked (`Arg::encode`).
+// ---------------------------------------------------------------------------
+
+fn js_err(e: dg::Error) -> Error {
+    Error::from_reason(e.message)
+}
+
+fn decode(json: &str) -> Result<Arg> {
+    if json.is_empty() {
+        return Ok(Arg::Null);
+    }
+    serde_json::from_str::<serde_json::Value>(json).map(|v| Arg::decode(&v)).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+fn list(json: &str) -> Result<Vec<Arg>> {
+    Ok(match decode(json)? {
+        Arg::List(l) => l,
+        Arg::Null => vec![],
+        other => vec![other],
+    })
+}
+
+fn encode(a: &Arg) -> String {
+    a.encode().to_string()
+}
+
+#[napi]
+pub struct NativeGraph {
+    inner: RefCell<Option<dg::Graph>>,
+    dir: PathBuf,
+}
+
+impl NativeGraph {
+    fn with<T>(&self, f: impl FnOnce(&mut dg::Graph) -> dg::Result<T>) -> Result<T> {
+        let mut g = self.inner.borrow_mut();
+        let g = g.as_mut().ok_or_else(|| Error::from_reason("this graph is finished: it was drawn or turned into its graph already"))?;
+        f(g).map_err(js_err)
+    }
+}
+
+#[napi]
+impl NativeGraph {
+    #[napi(constructor)]
+    pub fn new(lat: Option<f64>, lng: Option<f64>, dir: Option<String>) -> Result<Self> {
+        let place = match (lat, lng) {
+            (Some(lat), Some(lng)) => Some((lat, lng)),
+            (None, None) => None,
+            _ => return Err(Error::from_reason("lat and lng go together")),
+        };
+        Ok(NativeGraph { inner: RefCell::new(Some(dg::Graph::new(place))), dir: PathBuf::from(dir.unwrap_or_else(|| ".".into())) })
+    }
+
+    #[napi]
+    pub fn call(&self, name: String, args: String) -> Result<String> {
+        let args = list(&args)?;
+        self.with(|g| g.call(&name, &args)).map(|v| encode(&v))
+    }
+
+    #[napi]
+    pub fn prop(&self, name: String) -> Result<String> {
+        self.with(|g| g.get_property(&name)).map(|v| encode(&v))
+    }
+
+    #[napi]
+    pub fn get(&self, of: String, part: String) -> Result<String> {
+        let of = decode(&of)?;
+        self.with(|g| g.get(&of, &part)).map(|v| encode(&v))
+    }
+
+    #[napi]
+    pub fn describe(&self, v: String) -> Result<String> {
+        Ok(if v.is_empty() { dg::describe(None) } else { dg::describe(Some(&decode(&v)?)) })
+    }
+
+    #[napi]
+    pub fn output_begin(&self, spec: String) -> Result<bool> {
+        let spec = decode(&spec)?;
+        self.with(|g| match &spec {
+            Arg::Map(o) => g.output_begin(o),
+            other => g.call("output", &[other.clone()]).map(|_| false),
+        })
+    }
+
+    #[napi]
+    pub fn output_warps(&self, done: String) -> Result<()> {
+        let done = list(&done)?;
+        self.with(|g| g.output_warps(&done))
+    }
+
+    #[napi]
+    pub fn remap_grid(&self, warp: String, n: u32) -> Result<String> {
+        let warp = decode(&warp)?.as_map().cloned().unwrap_or_default();
+        self.with(|g| g.remap_grid(&warp, n as usize))
+            .map(|(columns, rows, points)| serde_json::json!({ "columns": columns, "rows": rows, "points": points }).to_string())
+    }
+
+    #[napi]
+    pub fn remap_mesh(&self, n: u32, columns: u32, rows: u32, points: String, went: String) -> Result<String> {
+        let points: Vec<[f64; 2]> = serde_json::from_str(&points).map_err(|e| Error::from_reason(e.to_string()))?;
+        let went = list(&went)?;
+        self.with(|g| g.remap_mesh(n as usize, columns as usize, rows as usize, &points, &went)).map(|v| encode(&v))
+    }
+
+    #[napi]
+    pub fn view_begin(&self, spec: String) -> Result<()> {
+        let spec = decode(&spec)?;
+        self.with(|g| g.view_begin(&spec))
+    }
+
+    #[napi]
+    pub fn view_end(&self, ok: bool) -> Result<String> {
+        self.with(|g| g.view_end(ok)).map(|v| encode(&v))
+    }
+
+    /// A view drawn in a JavaScript (or TypeScript) style by name, read
+    /// beside the graph's `dir`.
+    #[napi]
+    pub fn view_style(&self, spec: String, name: String) -> Result<String> {
+        let spec = decode(&spec)?;
+        let styles = drawland::styles_in(&self.dir);
+        let source = styles(&name).map_err(|e| Error::from_reason(format!("no style {name:?}: {e}")))?;
+        self.with(|g| g.view_begin(&spec))?;
+        let graph = self.inner.borrow_mut().take().expect("begun above");
+        let id = graph.view_id().unwrap_or_default().to_string();
+        let host = drawland::drawland_script::Host { place: None, styles: Some(styles), typescript: false };
+        let (mut graph, ran) = drawland::drawland_script::run_into(graph, &source, &host);
+        let ended = graph.view_end(ran.is_ok());
+        *self.inner.borrow_mut() = Some(graph);
+        ran.map_err(|e| Error::from_reason(format!("view {id} ({name}): {e}")))?;
+        ended.map(|v| encode(&v)).map_err(js_err)
+    }
+
+    /// The graph built, as its JSON. The graph is finished.
+    #[napi]
+    pub fn finish(&self) -> Result<String> {
+        let g = self.inner.borrow_mut().take().ok_or_else(|| Error::from_reason("this graph is finished already"))?;
+        g.finish().map(|g| g.to_json().to_string()).map_err(js_err)
+    }
+}
+
+/// Every function of the library, as a script names it (`areas.union`).
+#[napi]
+pub fn functions() -> Vec<String> {
+    dg::FUNCTIONS.iter().map(|s| s.to_string()).collect()
+}
+
+/// The values a script reads rather than calls (`page.width`).
+#[napi]
+pub fn properties() -> Vec<String> {
+    dg::PROPERTIES.iter().map(|s| s.to_string()).collect()
+}
+
+/// The library's JavaScript face (`library.js`), the one a profile's
+/// interpreter runs: `index.js` builds `Graph` on it.
+#[napi]
+pub const LIBRARY: &str = drawland::drawland_script::LIBRARY;
 
 /// The command line, `drawland map …`, on `argv` (without the program's
 /// name); the exit code.

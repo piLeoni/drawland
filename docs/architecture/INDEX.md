@@ -5,7 +5,8 @@ Compact map of the draw.land engine and its command line (the web page lives in 
 ## End-to-end flow
 
 ```
-Profile (.js)  →  drawland-script (Boa)  →  Grammar (JSON)
+Profile (.js/.ts) → drawland-script (Boa) ┐
+Python / Node / Rust Graph ───────────────┴→ drawland-graph → Grammar (JSON)
        →  fetch OSM / vector tiles / terrain / fonts (CLI or web worker)
        →  grammar_run  →  layered SVG (mm)
 ```
@@ -18,7 +19,7 @@ See [pipeline.md](pipeline.md).
 |-----------|-----|-------------------|
 | Pipeline & units | [pipeline.md](pipeline.md) | `output.rs`, `projection.rs`, `frame.rs`, `warp.rs`, `units.rs`, `profile.rs` |
 | Graph & execution | [grammar-engine.md](grammar-engine.md) | `grammar.rs`, `grammar_run.rs`, `geom.rs`, `optimize.rs` |
-| Profile language | [profiles.md](profiles.md) | `drawland-script/`, `drawland.d.ts`, `configs/` |
+| The library and its faces | [profiles.md](profiles.md) | `drawland-graph/` (the library), `drawland-script/` (JS face, `drawland.d.ts`), `drawland-ts/`, `bindings/`, `configs/` |
 | Map data, host & bindings | [cli-data.md](cli-data.md) | `crates/drawland/` (library + CLI), `drawland-cli/`, `bindings/python`, `bindings/node`, `.github/workflows/build.yml`, `scripts/`, `osm.rs`, `tiles.rs`, `osm_cache.rs`, `geojson.rs` |
 | Fills & strokes | [fills-compose.md](fills-compose.md) | `fill.rs`, `budget.rs`, `optimize.rs`, `profile.rs`, `svg.rs`, penfill catalogue, `drawland-script/src/catalog_dts.rs` |
 | Isoline blob fills (design) | [isoline-blob-fills.md](isoline-blob-fills.md) | penfill (new generator), `fill.rs`, compose masks |

@@ -12,6 +12,7 @@ categories = ["graphics", "science::geo"]
 
 [dependencies]
 drawland-core = { workspace = true }
+drawland-graph = { workspace = true }
 drawland-script = { workspace = true }
 clap = { workspace = true }
 geo = { workspace = true }
@@ -23,3 +24,6 @@ sha1_smol = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+drawland-graph = { workspace = true }

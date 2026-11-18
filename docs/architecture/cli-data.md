@@ -27,8 +27,8 @@ The `drawland` crate (`crates/drawland`) is the host in this repository: geocodi
 
 ## Bindings (`bindings/`)
 
-- `bindings/python` (pyo3 abi3, maturin; module `drawland._drawland`, wrapper `python/drawland/`): `draw`, `graph`, `Map`, `POSTCARD`, `cli`; the `drawland` console script. `draw` runs with the GIL released.
-- `bindings/node` (napi-rs 3; `native.js`/`native.d.ts` generated, `index.js`/`index.d.ts` the package's face, `cli.js` its bin): `draw` is an `AsyncTask` (a Promise), `graph` sync.
+- `bindings/python` (pyo3 abi3, maturin; module `drawland._drawland`, wrapper `python/drawland/`): `draw`, `graph`, `Map`, `POSTCARD`, `cli`, and `Graph` (`_Graph` over `drawland_graph::Graph`; values cross as `Arg`, kwargs as the trailing options object, `in_` → `in`; `__geo_interface__` and numpy accepted); errors are `drawland.Error`. `draw` runs with the GIL released; a `Graph` is drawn as `Profile::graph`.
+- `bindings/node` (napi-rs 3; `native.js`/`native.d.ts` generated, `index.js`/`index.d.ts` the package's face, `cli.js` its bin): `draw` is an `AsyncTask` (a Promise), `graph` sync. `Graph` is `library.js` itself (exported as `LIBRARY`) run over a `NativeGraph` (values as marked JSON); `library.d.ts` is `drawland.d.ts` as a module (`make-types.mjs`), so `Graph` is typed without globals.
 - Both are packaged by `.github/workflows/build.yml` for macOS arm64/x64, Linux x64/arm64 and Windows x64, with the sibling libraries from crates.io (`scripts/registry-deps.py`); `scripts/publish.sh` publishes crates.io, PyPI and npm from a run's artifacts.
 
 ## OSM / Overpass

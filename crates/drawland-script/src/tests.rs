@@ -1004,3 +1004,18 @@ fn a_contour_runs_along_the_edge_of_its_band() {
     }
     assert!(worst < px, "the contour strays {worst:.3} mm from its band's edge (a grid pixel is {px:.3} mm)");
 }
+
+#[test]
+fn typescript_runs_with_its_lines_and_columns_kept() {
+    let host = crate::Host { typescript: true, ..crate::Host::default() };
+    let ts = "const spacing: string = '0.5mm'\ninterface Look { pattern: string }\nconst look: Look = { pattern: 'lines' }\nconst b = areas.polygons(features.tiles('buildings'))\ndraw({ id: 'roofs', from: fills.fill({ in: b, ...look, spacing } as FillOptions) })\n";
+    let g = crate::evaluate_in(ts, &host).unwrap();
+    assert_eq!(g.draw.len(), 1);
+    // The mistake is where it was written, types and all.
+    let e = crate::evaluate_in("const n: number = 1\nconst a: Area = areas.union(n as any)\n", &host).expect_err("not an area");
+    assert_eq!(e.at, Some(drawland_core::grammar::At(2, 28)), "{e}");
+    // An enum needs code, not blanks.
+    let e = crate::evaluate_in("enum Pen { Black }\n", &host).expect_err("an enum");
+    assert!(e.message.starts_with("TypeScript:"), "{e}");
+    assert_eq!(e.at.map(|a| a.0), Some(1));
+}
