@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Caches
+.pytest_cache/
+.cache/
+cache/
+
+# Generated artifacts
+/*.svg
+exports/
+svg_backup/
+_raw/
+tmp/
+
+# Editors / OS
+.DS_Store
+.swp
+.swo
+*~
+
+# Inkscape / editor backups
+*.tif
+
+# Rust
+target/

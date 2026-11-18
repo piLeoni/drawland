@@ -1,0 +1,59 @@
+[workspace]
+members = ["crates/drawland-core", "crates/drawland-script", "crates/drawland-cli"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.1"
+edition = "2021"
+license = "AGPL-3.0-only"
+repository = "https://github.com/piLeoni/drawland"
+homepage = "https://draw.land"
+
+[workspace.dependencies]
+drawland-core = { path = "crates/drawland-core", version = "0.1.1" }
+drawland-script = { path = "crates/drawland-script", version = "0.1.1" }
+penfill = { path = "../penfill", version = "0.4.0", default-features = false }
+# Pen-and-ink terrain drawing: its own engine, its own expression trees.
+burin-map-core = { path = "../burin-map/crates/burin-map-core", version = "0.1.0" }
+# burin's JavaScript layer, mounted into draw.land's own interpreter so a
+# burin document runs as a first-class builder here.
+burin-map-script = { path = "../burin-map/crates/burin-map-script", version = "0.1.0" }
+# Reads tiles only; the CLI turns `fetch` on, the page downloads them itself.
+terramask = { path = "../terramask/crates/terramask", version = "0.2.0", default-features = false }
+# Corridor de-overlap of vector strokes, for compose.deoverlap.
+deoverlap-core = { path = "../deoverlap/core", version = "4.2.0" }
+rstar = "0.12"
+geo = "0.33"
+# The boolean engine under geo, for the non-zero fill of font outlines.
+i_overlay = "4.5"
+geographiclib-rs = "0.2"
+# Without default features: the aeqd projection pulls in C, which the WASM build cannot compile.
+proj4rs = { version = "0.2", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde-saphyr = "1.3"
+thiserror = "2"
+rayon = "1.12"
+clap = { version = "4.6", features = ["derive"] }
+ureq = { version = "3", features = ["json"] }
+sha1_smol = "1"
+approx = "0.5"
+ttf-parser = { version = "0.25", features = ["std"] }
+deunicode = "1.6"
+wuff = { version = "0.2.9", features = ["brotli", "z"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[profile.dev]
+# Incremental builds are what filled target/ with tens of GB of session
+# folders. Off: rebuilds are a little slower, but the cache stays sane.
+incremental = false
+
+# The sibling libraries are developed alongside draw.land: whatever asks for
+# them from crates.io (burin-map asks for terramask) gets the checkout beside
+# this one, so the build holds one copy of each.
+[patch.crates-io]
+terramask = { path = "../terramask/crates/terramask" }
+penfill = { path = "../penfill" }

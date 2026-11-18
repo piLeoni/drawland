@@ -1,0 +1,23 @@
+[package]
+name = "drawland-script"
+description = "draw.land profiles in JavaScript: the script builds the graph the engine runs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["plotter", "map", "javascript", "svg", "cartography"]
+categories = ["graphics", "science::geo"]
+
+[dependencies]
+drawland-core = { workspace = true }
+# The burin document builder, mounted into this same interpreter: burin's
+# scripting language is a first-class citizen in a draw.land profile.
+burin-map-script = { workspace = true }
+boa_engine = { version = "0.22", default-features = false }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+penfill = { workspace = true }
+terramask = { workspace = true }

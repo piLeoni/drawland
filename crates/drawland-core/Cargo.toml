@@ -1,0 +1,36 @@
+[package]
+name = "drawland-core"
+description = "Maps drawn for pen plotters: OSM features to a layered SVG. No I/O."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["plotter", "map", "openstreetmap", "svg", "cartography"]
+categories = ["graphics", "science::geo"]
+
+[dependencies]
+penfill = { workspace = true }
+burin-map-core = { workspace = true }
+terramask = { workspace = true, features = ["dem"] }
+deoverlap-core = { workspace = true }
+rstar = { workspace = true }
+geo = { workspace = true }
+i_overlay = { workspace = true }
+geographiclib-rs = { workspace = true }
+proj4rs = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+rayon = { workspace = true }
+ttf-parser = { workspace = true }
+deunicode = { workspace = true }
+wuff = { workspace = true, features = ["brotli", "z"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+js-sys = "0.3"
+
+[dev-dependencies]
+serde-saphyr = { workspace = true }
+approx = { workspace = true }

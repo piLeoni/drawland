@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "postcards"
+version = "1.0.0"
+description = "Generate pen-plotted postcards of any address from OpenStreetMap data"
+requires-python = ">=3.12"
+dynamic = ["dependencies"]
+
+[project.scripts]
+postcards = "postcards.cli:main"
+
+[tool.setuptools]
+packages = ["postcards", "postcards.utils"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning:shapely",
+    "ignore:GeoSeries.notna:UserWarning",
+    # pyproj touches a deprecated numpy scalar conversion we cannot fix.
+    "ignore:Conversion of an array with ndim > 0:DeprecationWarning",
+]
