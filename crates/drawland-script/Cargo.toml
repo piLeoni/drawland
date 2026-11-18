@@ -21,6 +21,7 @@ serde_json = { workspace = true }
 drawland-ts = { workspace = true, optional = true }
 
 [dev-dependencies]
+serde_json = { workspace = true }
 penfill = { workspace = true }
 terramask = { workspace = true }
 

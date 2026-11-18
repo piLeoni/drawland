@@ -1,4 +1,5 @@
-//! The Rust face builds the graph a JavaScript profile builds, node for node.
+//! The Rust face (drawland-graph's typed API) builds the graph a JavaScript
+//! profile builds, node for node.
 
 use drawland_graph::{obj, Arg, Graph};
 

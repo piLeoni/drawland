@@ -59,7 +59,7 @@ cargo test
 (cd bindings/python && maturin develop && pytest)
 ```
 
-The faces must agree: `drawland-graph/tests/api.rs`, the Python and Node tests compare a graph built in each with the same profile in JavaScript.
+The faces must agree: `drawland-script/tests/faces.rs`, the Python and Node tests compare a graph built in each with the same profile in JavaScript.
 
 Releases: push, let `.github/workflows/build.yml` build the wheels and addons, then `scripts/publish.sh <run-id>` (crates.io, PyPI, npm).
 

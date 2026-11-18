@@ -14,5 +14,3 @@ categories = ["graphics", "science::geo"]
 drawland-core = { workspace = true }
 serde_json = { workspace = true }
 
-[dev-dependencies]
-drawland-script = { workspace = true }
