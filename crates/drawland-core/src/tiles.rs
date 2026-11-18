@@ -367,8 +367,8 @@ mod tests {
     #[test]
     fn ocean_tile_features_span_the_query() {
         use geo::polygon;
-        const WEST: &[u8] = include_bytes!("../../../../terramask/crates/terramask/tests/fixtures/12-1243-1528.pbf");
-        const EAST: &[u8] = include_bytes!("../../../../terramask/crates/terramask/tests/fixtures/12-1244-1528.pbf");
+        const WEST: &[u8] = include_bytes!("../tests/fixtures/12-1243-1528.pbf");
+        const EAST: &[u8] = include_bytes!("../tests/fixtures/12-1244-1528.pbf");
         let (a, b) = (
             TileId::new(12, 1243, 1528).merc_bounds(),
             TileId::new(12, 1244, 1528).merc_bounds(),
