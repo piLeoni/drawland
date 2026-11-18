@@ -7,7 +7,7 @@ roads at their real width, contours, soundings, labels in single-stroke
 fonts. The output is one layered SVG in paper millimetres. What is drawn, and
 how, is a short JavaScript **profile**.
 
-![City Grain](docs/gallery/city-grain.webp)
+![City Grain](https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/city-grain.webp)
 
 This repository is the engine and its command line, open source
 (AGPL-3.0). The web page at [draw.land](https://draw.land) is built on it: a
@@ -46,7 +46,7 @@ compose.mask({ from: areas.grow(water, "0.3mm"), occludes: ["parks"] })
 drawland map lake-merritt.js -o lake-merritt.svg
 ```
 
-<img src="docs/gallery/tutorial-04-masks.webp" alt="Lake Merritt, from the profile above" width="600">
+<img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/tutorial-04-masks.webp" alt="Lake Merritt, from the profile above" width="600">
 
 The script only builds a graph of operations; the engine runs it in Rust.
 Every `id` is a group in the SVG, a pen of its own.
@@ -65,7 +65,7 @@ drawland map city-grain.js --lat 37.8771 --lng -122.2562 -o berkeley.svg
 ```
 
 With no profile it draws the postcard, an example built in
-([crates/drawland/postcard.js](crates/drawland/postcard.js)).
+([crates/drawland/postcard.js](https://github.com/piLeoni/drawland/blob/main/crates/drawland/postcard.js)).
 
 | Argument | Does |
 |---|---|
@@ -97,7 +97,7 @@ print(m.groups)                       # [(group id, strokes), …]: a group is a
 m.save("bologna.svg", per_layer=True)
 ```
 
-[bindings/python](bindings/python) · [docs](https://draw.land/docs#dev-python)
+[bindings/python](https://github.com/piLeoni/drawland/tree/main/bindings/python) · [docs](https://draw.land/docs#dev-python)
 
 ### Node
 
@@ -112,7 +112,7 @@ const map = await drawland.draw({ profile: 'city-grain.js', lat: 37.8771, lng: -
 map.save('berkeley.svg', { perLayer: true })
 ```
 
-[bindings/node](bindings/node) · [docs](https://draw.land/docs#dev-node)
+[bindings/node](https://github.com/piLeoni/drawland/tree/main/bindings/node) · [docs](https://draw.land/docs#dev-node)
 
 ### Rust
 
@@ -131,7 +131,7 @@ map.save("map.svg".as_ref(), Default::default())?;
 
 `drawland` downloads and caches; `drawland-script` only turns a script into
 a graph; `drawland-core` draws a graph from bytes you hand it, with no I/O.
-[crates/drawland](crates/drawland) · [docs](https://draw.land/docs#dev-rust)
+[crates/drawland](https://github.com/piLeoni/drawland/tree/main/crates/drawland) · [docs](https://draw.land/docs#dev-rust)
 
 ## Gallery
 
@@ -140,15 +140,15 @@ plain profile: open it on [draw.land](https://draw.land), save it from the
 editor, and draw it here, anywhere.
 
 <table>
-<tr><td width="50%" valign="top"><img src="docs/gallery/city-grain.webp" alt="City Grain"><br><b>City Grain</b><br>Every surface its own pattern, tree crowns as isoline stacks, the ground in burin hatching, names that clear what they cross.</td><td width="50%" valign="top"><img src="docs/gallery/karl-the-fog.webp" alt="Karl the Fog"><br><b>Karl the Fog</b><br>City Grain under cumulus: the clouds are a pattern, their footprint masks the city and, moved down-sun, is stippled as their shadow.</td></tr>
-<tr><td width="50%" valign="top"><img src="docs/gallery/napkin-sketch.webp" alt="Napkin Sketch"><br><b>Napkin Sketch</b><br>Very little drawn, all of it loosened by a hand-drawn tremble at the end.</td><td width="50%" valign="top"><img src="docs/gallery/beton-brut.webp" alt="Béton Brut"><br><b>Béton Brut</b><br>A heavy nib: weight from offset passes side by side, never a wider pen.</td></tr>
-<tr><td width="50%" valign="top"><img src="docs/gallery/salt-and-stone.webp" alt="Salt and Stone"><br><b>Salt and Stone</b><br>Nothing built, all burin: contours, a concentric coast, currents that curl as the flow turns.</td><td width="50%" valign="top"><img src="docs/gallery/tree-line.webp" alt="Tree Line"><br><b>Tree Line</b><br>Contours as features with their heights as tags, coloured low to high, every fifth named along the line.</td></tr>
-<tr><td width="50%" valign="top"><img src="docs/gallery/lead-line.webp" alt="Lead Line"><br><b>Lead Line</b><br>A sounding chart for any shore: depths read at points, dotted isobaths.</td><td width="50%" valign="top"><img src="docs/gallery/schoolroom-atlas.webp" alt="Schoolroom Atlas"><br><b>Schoolroom Atlas</b><br>A coloured physical map: hypsometric tints, depths, a graticule round an atlas plate.</td></tr>
-<tr><td width="50%" valign="top"><img src="docs/gallery/dead-reckoning.webp" alt="Dead Reckoning"><br><b>Dead Reckoning</b><br>A graticule worked out by the script, traced through the projection point by point.</td><td width="50%" valign="top"><img src="docs/gallery/square-one.webp" alt="Square One"><br><b>Square One</b><br>A city map's lettered grid, your places numbered on it, and an index: all arithmetic on the page.</td></tr>
-<tr><td width="50%" valign="top"><img src="docs/gallery/looking-glass.webp" alt="Looking Glass"><br><b>Looking Glass</b><br>Japan in a projection written in the script (`warp: { remap }`): distance from the centre on a log scale.</td><td width="50%" valign="top"><img src="docs/gallery/true-north.webp" alt="True North"><br><b>True North</b><br>The Arctic from above in polar stereographic, a PROJ string centred on the pole.</td></tr>
-<tr><td width="50%" valign="top"><img src="docs/gallery/shaky-ground.webp" alt="Shaky Ground"><br><b>Shaky Ground</b><br>Live data: the last 30 days of quakes from the USGS feed, sized by magnitude, inked by depth.</td><td width="50%" valign="top"><img src="docs/gallery/rush-hour.webp" alt="Rush Hour"><br><b>Rush Hour</b><br>Boston's T with every train where it is now, from GeoJSON lines and a plain-JSON API.</td></tr>
-<tr><td width="50%" valign="top"><img src="docs/gallery/red-pencil.webp" alt="Red Pencil"><br><b>Red Pencil</b><br>A GeoJSON of your own over a quiet base map, for two pens that never touch.</td><td width="50%" valign="top"><img src="docs/gallery/cookie-cutter.webp" alt="Cookie Cutter"><br><b>Cookie Cutter</b><br>A state's silhouette as a die-cut card, one hatch per height belt, the border on its own layer for the knife.</td></tr>
-<tr><td width="50%" valign="top"><img src="docs/gallery/sixty-five-north.webp" alt="65°N 18°W"><br><b>65°N 18°W</b><br>Four places in Iceland, each at its own scale, drawn as views into four corners of one card.</td></tr>
+<tr><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/city-grain.webp" alt="City Grain"><br><b>City Grain</b><br>Every surface its own pattern, tree crowns as isoline stacks, the ground in burin hatching, names that clear what they cross.</td><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/karl-the-fog.webp" alt="Karl the Fog"><br><b>Karl the Fog</b><br>City Grain under cumulus: the clouds are a pattern, their footprint masks the city and, moved down-sun, is stippled as their shadow.</td></tr>
+<tr><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/napkin-sketch.webp" alt="Napkin Sketch"><br><b>Napkin Sketch</b><br>Very little drawn, all of it loosened by a hand-drawn tremble at the end.</td><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/beton-brut.webp" alt="Béton Brut"><br><b>Béton Brut</b><br>A heavy nib: weight from offset passes side by side, never a wider pen.</td></tr>
+<tr><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/salt-and-stone.webp" alt="Salt and Stone"><br><b>Salt and Stone</b><br>Nothing built, all burin: contours, a concentric coast, currents that curl as the flow turns.</td><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/tree-line.webp" alt="Tree Line"><br><b>Tree Line</b><br>Contours as features with their heights as tags, coloured low to high, every fifth named along the line.</td></tr>
+<tr><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/lead-line.webp" alt="Lead Line"><br><b>Lead Line</b><br>A sounding chart for any shore: depths read at points, dotted isobaths.</td><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/schoolroom-atlas.webp" alt="Schoolroom Atlas"><br><b>Schoolroom Atlas</b><br>A coloured physical map: hypsometric tints, depths, a graticule round an atlas plate.</td></tr>
+<tr><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/dead-reckoning.webp" alt="Dead Reckoning"><br><b>Dead Reckoning</b><br>A graticule worked out by the script, traced through the projection point by point.</td><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/square-one.webp" alt="Square One"><br><b>Square One</b><br>A city map's lettered grid, your places numbered on it, and an index: all arithmetic on the page.</td></tr>
+<tr><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/looking-glass.webp" alt="Looking Glass"><br><b>Looking Glass</b><br>Japan in a projection written in the script (`warp: { remap }`): distance from the centre on a log scale.</td><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/true-north.webp" alt="True North"><br><b>True North</b><br>The Arctic from above in polar stereographic, a PROJ string centred on the pole.</td></tr>
+<tr><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/shaky-ground.webp" alt="Shaky Ground"><br><b>Shaky Ground</b><br>Live data: the last 30 days of quakes from the USGS feed, sized by magnitude, inked by depth.</td><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/rush-hour.webp" alt="Rush Hour"><br><b>Rush Hour</b><br>Boston's T with every train where it is now, from GeoJSON lines and a plain-JSON API.</td></tr>
+<tr><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/red-pencil.webp" alt="Red Pencil"><br><b>Red Pencil</b><br>A GeoJSON of your own over a quiet base map, for two pens that never touch.</td><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/cookie-cutter.webp" alt="Cookie Cutter"><br><b>Cookie Cutter</b><br>A state's silhouette as a die-cut card, one hatch per height belt, the border on its own layer for the knife.</td></tr>
+<tr><td width="50%" valign="top"><img src="https://raw.githubusercontent.com/piLeoni/drawland/main/docs/gallery/sixty-five-north.webp" alt="65°N 18°W"><br><b>65°N 18°W</b><br>Four places in Iceland, each at its own scale, drawn as views into four corners of one card.</td></tr>
 </table>
 
 ## What a profile can do
