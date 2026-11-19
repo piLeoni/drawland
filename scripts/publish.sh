@@ -94,13 +94,19 @@ for a in $want_addons; do
     cp "$root/LICENSE" "$node/npm/$platform/"
   done
 done
+# A package already on npm at this version is skipped, so a release that
+# stopped halfway (npm refused one package) is finished by running it again.
+# `drawland` goes last: before it, nobody installs the new addons.
+published() { [ "$(npm view "$1@$version" version 2>/dev/null)" = "$version" ]; }
 for d in "$node"/npm/*/; do
   ls "$d"*.node >/dev/null || { echo "no addon in $d" >&2; exit 1; }
+  name="$(node -p "require('${d}package.json').name")"
+  if published "$name"; then echo "  $name@$version is on npm already"; continue; fi
   (cd "$d" && npm publish --access public)
 done
 
 echo "→ npm $version: drawland"
 cp "$root/LICENSE" "$node/"
-(cd "$node" && npm publish --access public)
+if published drawland; then echo "  drawland@$version is on npm already"; else (cd "$node" && npm publish --access public); fi
 
 echo "Done."
