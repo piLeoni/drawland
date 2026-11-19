@@ -4,7 +4,7 @@ Short rationale for choices that are easy to misread from code alone. Add entrie
 
 ## Profile builds a graph, engine runs it
 
-JavaScript never holds geometry. A host can load the interpreter and the engine separately (the web page loads the interpreter only when a script runs), and the CLI can dump and load JSON graphs.
+JavaScript never holds geometry. A host can load the library and the engine separately, and can run a profile without our interpreter: the web page runs it in the browser's own JavaScript, over `library.js` and `drawland-graph` compiled to WASM, and loads that only when a script runs. The CLI can dump and load JSON graphs.
 
 ## The library is Rust; every language is a face
 
@@ -12,7 +12,7 @@ JavaScript never holds geometry. A host can load the interpreter and the engine 
 
 ## TypeScript by blanking the types
 
-A `.ts` profile has its types replaced by blanks (`drawland-ts`, swc's fast strip), not transpiled: every line and column of the JavaScript is the TypeScript's, so errors point where the author wrote. What would need code (`enum`, `namespace`) is an error. On the web page the stripper is a WASM module of its own, loaded only for TypeScript, so the interpreter stays small.
+A `.ts` profile has its types replaced by blanks (`drawland-ts`, swc's fast strip), not transpiled: every line and column of the JavaScript is the TypeScript's, so errors point where the author wrote. What would need code (`enum`, `namespace`) is an error. On the web page the stripper is a WASM module of its own, loaded only for TypeScript.
 
 ## Vector tiles default; Overpass optional
 
