@@ -1,6 +1,6 @@
 //! draw.land on a screen. The graph's `paint` entries, evaluated by the
 //! engine ([`drawland_core::grammar_run::paint`]), are painted into a grid:
-//! a 1-bit bitmap for e-ink, OLED and other black-and-white displays, or
+//! a 1-bit bitmap (black and white pixels), or
 //! character cells for a terminal. Each layer is painted over the ones
 //! before, its `halo` cleared out of them first; names are placed in whole
 //! pixels or cells, none over another.
@@ -19,15 +19,16 @@ pub mod font;
 pub mod pattern;
 pub mod place;
 pub mod raster;
+pub mod scene;
 pub mod text;
 
 pub use bitmap::Bitmap;
+pub use scene::{Scene, View};
 pub use text::Text;
 
 use drawland_core::grammar_run::{PaintShape, Painted};
 use drawland_core::output::Output;
 use drawland_core::paint::{Look, Screen, ScreenKind};
-use drawland_core::profile::ProjectionMode;
 
 /// A painted screen.
 #[derive(Clone, Debug, PartialEq)]
@@ -111,22 +112,10 @@ impl Picture {
 
 /// Where the screen's top-left dot is in the world's dots: what patterns
 /// and tiled characters are read against, so they stay on the ground as
-/// the map moves. On web Mercator a dot of the world is fixed for a scale;
-/// any other projection reads them from the screen's corner.
+/// the map moves ([`View::origin`]). Off web Mercator (or turned), they are
+/// read from the screen's corner.
 pub fn origin(output: &Output, screen: &Screen) -> (i64, i64) {
-    if output.projection != ProjectionMode::Webmercator {
-        return (0, 0);
-    }
-    const R: f64 = 6_378_137.0;
-    let (lon, lat) = output.center;
-    let lat = lat.clamp(-85.05, 85.05);
-    let x = R * lon.to_radians();
-    let y = R * (std::f64::consts::FRAC_PI_4 + lat.to_radians() / 2.0).tan().ln();
-    // Mercator metres a dot: the scale is the ground a unit spans (in mm),
-    // true at the centre's latitude.
-    let per_dot = screen.dot() * output.scale / 1000.0 / lat.to_radians().cos();
-    let (w, h) = screen.dots();
-    ((x / per_dot).round() as i64 - w as i64 / 2, (-y / per_dot).round() as i64 - h as i64 / 2)
+    View::of(output, *screen).map(|v| v.origin()).unwrap_or((0, 0))
 }
 
 /// The layers, bottom first, painted on `screen`; `origin` from [`origin`].

@@ -1,5 +1,5 @@
-//! A screen: the output as a grid of pixels (a 1-bit bitmap for e-ink, OLED
-//! and other black-and-white displays) or of character cells (a terminal),
+//! A screen: the output as a grid of pixels (a 1-bit bitmap, every pixel
+//! black or white) or of character cells (a terminal),
 //! and the `paint` entries that cover it.
 //!
 //! The pen plotter's `draw` entries are strokes on paper; a screen has none

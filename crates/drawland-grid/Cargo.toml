@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 readme = "../../README.md"
-keywords = ["map", "openstreetmap", "ascii", "bitmap", "e-ink"]
+keywords = ["map", "openstreetmap", "ascii", "bitmap", "1-bit"]
 categories = ["graphics", "science::geo"]
 include = ["src/**", "fonts/**", "Cargo.toml"]
 

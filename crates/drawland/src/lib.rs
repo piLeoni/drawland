@@ -325,6 +325,25 @@ impl Drawer {
     /// A graph painted at `place` on its screen; files it names are read
     /// from `dir`.
     pub fn paint_graph(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress) -> Result<Painting, String> {
+        let (output, screen, layers) = self.painted(grammar, place, dir, progress)?;
+        let picture = drawland_grid::render(&screen, drawland_grid::origin(&output, &screen), &layers);
+        Ok(Painting { title: grammar.title.clone(), picture })
+    }
+
+    /// A graph's layers at `place` as a [`drawland_grid::Scene`]: its
+    /// screen painted wide once, any view of it painted after in a frame's
+    /// time. Web Mercator, north up, unbent only.
+    pub fn scene_graph(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress) -> Result<drawland_grid::Scene, String> {
+        let (output, screen, layers) = self.painted(grammar, place, dir, progress)?;
+        let view = drawland_grid::View::of(&output, screen).ok_or("a screen that moves is web Mercator, north up, with no warp")?;
+        if !grammar.output.warp.is_empty() {
+            return Err("a screen that moves is web Mercator, north up, with no warp".into());
+        }
+        Ok(drawland_grid::Scene::new(view, layers))
+    }
+
+    /// The graph evaluated for its screen: each `paint` entry's geometry.
+    fn painted(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress) -> Result<(Output, drawland_core::paint::Screen, Vec<drawland_core::grammar_run::Painted>), String> {
         let Some(screen) = grammar.output.screen else {
             return Err("this profile draws paper: give its output a screen, output({ screen: { kind, width, height } })".into());
         };
@@ -335,9 +354,8 @@ impl Drawer {
         let page = self.gather(progress, grammar, &output, dir, "")?;
         let draw = Task::begin(progress, "draw", None, "paint", 0, "");
         let layers = drawland_core::grammar_run::paint(grammar, &output, page.inputs(), &draw).map_err(|e| e.to_string())?;
-        let picture = drawland_grid::render(&screen, drawland_grid::origin(&output, &screen), &layers);
         draw.ok(&format!("{} layers · {} × {}", layers.len(), screen.width, screen.height));
-        Ok(Painting { title: grammar.title.clone(), picture })
+        Ok((output, screen, layers))
     }
 
     /// The output's centre `(lng, lat)`: the place given, then the profile's.

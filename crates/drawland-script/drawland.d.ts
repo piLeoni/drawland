@@ -593,7 +593,7 @@ interface OutputOptions {
   tileZoom?: number
   /**
    * A screen instead of paper: a 1-bit bitmap (`"bitmap"`, `width` × `height`
-   * pixels: e-ink, OLED and other black-and-white displays) or a terminal's
+   * pixels, each black or white) or a terminal's
    * character cells (`"text"`, `width` columns × `height` rows). The screen's
    * pixels or characters are then the output's unit in place of the mm: every
    * length (a buffer, an offset, `page.width`) counts them, and `scale` is

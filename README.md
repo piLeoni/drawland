@@ -291,8 +291,8 @@ one with `// @ts-check`). The Node package carries the same types for
 
 ## Screens: bitmaps and text
 
-The same library paints screens too: a 1-bit **bitmap** for e-ink, OLED and
-other black-and-white displays, or a terminal's **text** cells, in colour.
+The same library paints screens too: a 1-bit **bitmap**, every pixel black
+or white, or a terminal's **text** cells, in colour.
 `output({ screen: { kind: "bitmap", width: 800, height: 480 } })` (or
 `kind: "text"`, in columns and rows) makes the output a screen, and `paint`
 covers it a layer at a time, each clearing its `halo` out of what is under it:
@@ -316,16 +316,16 @@ is the ground one of them spans, `scale: "3m"`. A character is one unit
 across and two down.
 
 ```bash
-drawland map configs/e-ink.js -o venice.png        # a 1-bit PNG (or .pbm)
+drawland map configs/1-bit.js -o venice.png        # a 1-bit PNG (or .pbm)
 drawland map configs/terminal.js -o -              # straight to the terminal (or .ans, .txt, .html, .png)
 drawland view configs/terminal.js --address "Rialto, Venezia"   # arrows move, + and - zoom, q quits
-drawland serve configs/e-ink.js --port 8701        # the map in a web page: drag, wheel, pixel ×1–×8
+drawland serve configs/1-bit.js --port 8701        # the map in a web page, moved live: drag, wheel, pixel ×1–×8
 drawland serve configs/terminal.js --port 8702     # the same for text cells, side by side
 ```
 
-| `configs/e-ink.js` (800 × 480) | `configs/terminal.js` (120 × 44 cells) |
+| `configs/1-bit.js` (800 × 480) | `configs/terminal.js` (120 × 44 cells) |
 |---|---|
-| ![Venice on e-ink](docs/gallery/screen-e-ink.png) | ![Venice in a terminal](docs/gallery/screen-terminal.png) |
+| ![Venice in 1 bit](docs/gallery/screen-1-bit.png) | ![Venice in a terminal](docs/gallery/screen-terminal.png) |
 
 ## Repository layout
 

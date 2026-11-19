@@ -1,10 +1,10 @@
-// E-ink: the map in black and white pixels for a 7.5" e-paper screen
+// 1-bit: the map in black and white pixels, every pixel one or the other
 // (800 × 480). Buildings solid black, like Nolli's plan of Rome, so the
 // streets are the white between them; water in waves, parks stippled;
 // roads with a white halo where they cross the black; names in a pixel
 // font, each with a pixel of clear screen round its letters.
-// `drawland map configs/e-ink.js -o map.png`.
-title("E-ink")
+// `drawland map configs/1-bit.js -o map.png`.
+title("1-bit")
 
 // ---------------------------------------------------------------------------
 // 1. PARAMETERS & STYLE PALETTE
