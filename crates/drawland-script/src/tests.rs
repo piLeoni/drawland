@@ -1019,3 +1019,40 @@ fn typescript_runs_with_its_lines_and_columns_kept() {
     assert!(e.message.starts_with("TypeScript:"), "{e}");
     assert_eq!(e.at.map(|a| a.0), Some(1));
 }
+
+#[test]
+fn a_screen_is_painted_layer_by_layer() {
+    let g = evaluate(
+        "output({ lat: 45.43, lng: 12.33, screen: { kind: 'text', width: 100, height: 30 } })\n\
+         const water = areas.polygons(features.tiles('water'))\n\
+         const roads = modules.roads({ from: features.tiles('roads') })\n\
+         paint({ id: 'land', from: page.frame, fill: { background: '#111' } })\n\
+         paint({ id: 'water', from: water, fill: { chars: ['~ ', ' ~'], color: 'blue' } })\n\
+         paint({ id: 'roads', from: roads.centerlines, line: { style: 'box' }, halo: 1 })\n\
+         paint({ id: 'names', from: features.tiles('road_names'), text: { upper: true } })\n",
+    )
+    .unwrap();
+    assert_eq!(g.paint.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["land", "water", "roads", "names"]);
+    assert_eq!(g.paint[2].from.module.as_deref(), Some("roads"));
+    assert!(g.draw.is_empty());
+    // `page.width` is the screen's: 100 cells of two dots.
+    let w = evaluate(
+        "output({ lat: 0, lng: 0, screen: { kind: 'bitmap', width: 96, height: 10 } })\n\
+         paint({ id: 'p', from: areas.shape({ at: [page.width / 2, 1], rect: [2, 1] }), fill: { pattern: 'solid' } })\n",
+    )
+    .unwrap();
+    assert!((w.output.width.0 - 25.4).abs() < 1e-9, "96 pixels are an inch");
+}
+
+#[test]
+fn paint_says_what_it_takes() {
+    let screen = "output({ lat: 0, lng: 0, screen: { kind: 'text', width: 80, height: 24 } })\n";
+    let e = err(&format!("{screen}paint({{ id: 'x', from: areas.polygons(features.tiles('water')), line: {{}} }})\n"));
+    assert!(e.message.contains("from is an area, painted with fill, not line"), "{}", e.message);
+    let e = err(&format!("{screen}paint({{ id: 'x', from: lines.of(features.tiles('roads')), line: {{ style: 'dashed' }} }})\n"));
+    assert!(e.message.contains("line:") && e.message.contains("dashed"), "{}", e.message);
+    let e = err("output({ lat: 0, lng: 0, width: '6in', screen: { kind: 'text', width: 80, height: 24 } })\n");
+    assert!(e.message.contains("a screen sets its own size; leave out width"), "{}", e.message);
+    let e = err("output({ lat: 0, lng: 0 })\npaint({ id: 'x', from: page.frame, fill: { pattern: 'solid' } })\n");
+    assert!(e.message.contains("give the output one"), "{}", e.message);
+}

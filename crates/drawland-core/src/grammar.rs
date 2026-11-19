@@ -746,6 +746,9 @@ pub struct Grammar {
     pub sections: Vec<(Section, Vec<Def>)>,
     pub draw: Vec<Draw>,
     pub compose: Compose,
+    /// A screen's layers, bottom first (`paint(...)`): what covers the grid
+    /// when the output is a screen (`output.screen`).
+    pub paint: Vec<crate::paint::Paint>,
     /// Other places drawn into rectangles of this page (`view(...)`), under
     /// the page's own groups. Each is a whole graph with its own output.
     pub views: Vec<View>,
@@ -937,7 +940,26 @@ struct Raw {
     #[serde(default)]
     compose: RawCompose,
     #[serde(default)]
+    paint: Vec<RawPaint>,
+    #[serde(default)]
     views: Vec<RawView>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPaint {
+    id: String,
+    from: String,
+    #[serde(default)]
+    fill: Option<crate::paint::FillPaint>,
+    #[serde(default)]
+    line: Option<crate::paint::LinePaint>,
+    #[serde(default)]
+    text: Option<crate::paint::TextPaint>,
+    #[serde(default)]
+    halo: crate::paint::Halo,
+    #[serde(default)]
+    at: Option<At>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1212,7 +1234,32 @@ fn build(raw: Raw) -> Result<Grammar, GrammarError> {
             Ok(View { id: v.id, at: (v.at[0], v.at[1]), grammar: Box::new(grammar), ink: v.ink })
         })
         .collect::<Result<Vec<_>, GrammarError>>()?;
-    let grammar = Grammar { title: raw.title, output: raw.output, sections, draw, compose, views };
+    let paint = raw
+        .paint
+        .into_iter()
+        .map(|p| {
+            let from = parse_output(&p.from)?;
+            // Lines and features have a look by default; an area says its fill.
+            let kind = if from.module.is_some() { Section::Lines } else { from.name.section };
+            let look = match (p.fill, p.line, p.text) {
+                (Some(f), None, None) => crate::paint::Look::Fill(f),
+                (None, Some(l), None) => crate::paint::Look::Line(l),
+                (None, None, Some(t)) => crate::paint::Look::Text(t),
+                (None, None, None) if kind == Section::Lines => crate::paint::Look::Line(Default::default()),
+                (None, None, None) if kind == Section::Features => crate::paint::Look::Text(Default::default()),
+                _ => {
+                    return Err(GrammarError::Invalid(located(
+                        &format!("paint {:?}: one of fill, line or text", p.id),
+                        p.at,
+                    )))
+                }
+            };
+            Ok(crate::paint::Paint { id: p.id, from, look, halo: p.halo, at: p.at })
+        })
+        .collect::<Result<Vec<_>, GrammarError>>()?;
+    let mut output = raw.output;
+    output.fit_screen().map_err(GrammarError::Invalid)?;
+    let grammar = Grammar { title: raw.title, output, sections, draw, compose, paint, views };
     validate(&grammar)?;
     Ok(grammar)
 }
@@ -2200,6 +2247,24 @@ impl Grammar {
             })
             .collect();
         out.insert("draw".into(), Value::Array(draw));
+        if !self.paint.is_empty() {
+            let paint: Vec<Value> = self
+                .paint
+                .iter()
+                .map(|p| {
+                    let mut v = json!({ "id": p.id, "from": p.from.to_json() });
+                    v[p.look.key()] = p.look.to_json();
+                    if !p.halo.is_none() {
+                        v["halo"] = json!(p.halo);
+                    }
+                    if let Some(at) = p.at {
+                        v["at"] = json!(at);
+                    }
+                    v
+                })
+                .collect();
+            out.insert("paint".into(), Value::Array(paint));
+        }
         let masks: serde_json::Map<String, Value> = self
             .compose
             .masks
@@ -2291,6 +2356,48 @@ fn validate_label_pick(g: &Grammar, def: &Def, pick: &LabelPick) -> Result<(), G
     Ok(())
 }
 
+/// What each paint entry paints is defined and fits its look: an area is
+/// filled, lines are lined, features are named. Ids are unique.
+fn validate_paint(g: &Grammar) -> Result<(), GrammarError> {
+    use crate::paint::Look;
+    let mut ids = BTreeSet::new();
+    for p in &g.paint {
+        let fail = |m: String| GrammarError::Invalid(located(&format!("paint {:?}: {m}", p.id), p.at));
+        if !ids.insert(p.id.as_str()) {
+            return Err(fail("the id is painted twice".into()));
+        }
+        p.look.validate().map_err(fail)?;
+        let kind = match &p.from.module {
+            Some(m) => {
+                if g.module(m).is_none() {
+                    return Err(fail(format!("nothing calls module {m}")));
+                }
+                Section::Lines
+            }
+            None => {
+                if g.find(&p.from.name).is_none() {
+                    return Err(fail(format!("from {}: no such def", p.from.name)));
+                }
+                p.from.name.section
+            }
+        };
+        let wants = match (&p.look, kind) {
+            (Look::Fill(_), Section::Areas) | (Look::Line(_), Section::Lines) | (Look::Text(_), Section::Features) => None,
+            (_, Section::Fills) => Some("a fill's strokes are for paper: paint its area with a fill pattern instead".to_string()),
+            (Look::Fill(_), _) => Some(format!("fill paints an area, not ${kind}")),
+            (Look::Line(_), _) => Some(format!("line paints lines, not ${kind}")),
+            (Look::Text(_), _) => Some(format!("text names features, not ${kind}")),
+        };
+        if let Some(m) = wants {
+            return Err(fail(m));
+        }
+    }
+    if !g.paint.is_empty() && g.output.screen.is_none() {
+        return Err(GrammarError::Invalid("paint covers a screen: give the output one, output({ screen: { kind, width, height } })".into()));
+    }
+    Ok(())
+}
+
 /// Every reference defined in the right section, draw ids unique, order and
 /// masks naming draw ids, no loops.
 pub fn validate(g: &Grammar) -> Result<(), GrammarError> {
@@ -2324,6 +2431,7 @@ pub fn validate(g: &Grammar) -> Result<(), GrammarError> {
             return Err(GrammarError::Invalid(format!("draw from {}: no such def", d.from.name)));
         }
     }
+    validate_paint(g)?;
     let mut groups: BTreeSet<String> = BTreeSet::new();
     for d in &g.draw {
         if !groups.insert(d.group()) {
@@ -2552,6 +2660,38 @@ compose:
         // mask from a line set: refused
         let text = format!("{base}draw:\n  - {{ from: $lines.l }}\ncompose:\n  masks:\n    m: {{ from: $lines.l }}\n");
         assert!(matches!(parse(&text), Err(GrammarError::Invalid(m)) if m.contains("must be an area")));
+    }
+
+    #[test]
+    fn a_screen_is_painted_by_what_each_entry_paints() {
+        let screen = "output: { screen: { kind: text, width: 80, height: 24 } }\n";
+        let base = format!(
+            "{screen}$features:\n  f: {{ osm_select: {{ building: true }} }}\n\
+             $areas:\n  a: {{ tools_polygons: $features.f }}\n\
+             $lines:\n  l: {{ tools_rings: $areas.a }}\n"
+        );
+        let g = parse(&format!(
+            "{base}paint:\n  - {{ id: blocks, from: $areas.a, fill: {{ chars: [\"~ \", \" ~\"], color: \"#36c\" }} }}\n\
+             \x20 - {{ id: walls, from: $lines.l, line: {{ style: box }}, halo: [1, 0] }}\n\
+             \x20 - {{ id: names, from: $features.f, text: {{ marker: \"*\" }} }}\n"
+        ))
+        .unwrap();
+        // The screen's size in mm follows from its cells, two by four dots each.
+        assert!((g.output.width.0 - 80.0 * 2.0 * crate::paint::PIXEL_MM).abs() < 1e-9);
+        assert_eq!(g.paint.len(), 3);
+        assert_eq!(g.paint[1].halo, crate::paint::Halo(1, 0));
+        // Back through JSON, the same graph.
+        let again = Grammar::from_json(&g.to_json().to_string()).unwrap();
+        assert_eq!(again.paint, g.paint);
+        assert_eq!(again.output, g.output);
+        // An area is filled, not lined; a pattern must be one there is.
+        let wrong = parse(&format!("{base}paint:\n  - {{ id: x, from: $areas.a, line: {{}} }}\n"));
+        assert!(matches!(&wrong, Err(GrammarError::Invalid(m)) if m.contains("line paints lines")), "{wrong:?}");
+        let unknown = parse(&format!("{base}paint:\n  - {{ id: x, from: $areas.a, fill: {{ pattern: plaid }} }}\n"));
+        assert!(matches!(unknown, Err(GrammarError::Invalid(m)) if m.contains("plaid")));
+        // Paper has no paint.
+        let paper = parse("$areas:\n  a: { engine_frame: {} }\npaint:\n  - { id: x, from: $areas.a, fill: { pattern: solid } }\n");
+        assert!(matches!(paper, Err(GrammarError::Invalid(m)) if m.contains("give the output one")));
     }
 
     #[test]

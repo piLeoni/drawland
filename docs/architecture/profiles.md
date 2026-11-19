@@ -32,7 +32,7 @@ Limits: `LOOP_LIMIT`, `RECURSION_LIMIT` in `lib.rs`. Errors format as `line N co
 
 ## API groups (top-level)
 
-`output`, `title`, `features`, `areas`, `lines`, `fills`, `engine`, `page`, `world`, `burin`, `ink`, `modules`, `draw`, `compose`, `view`: every function in `drawland_graph::FUNCTIONS`, every value in `PROPERTIES`; `drawland.d.ts` declares them (a test compares it with the JS face's `library_names()`).
+`output`, `title`, `features`, `areas`, `lines`, `fills`, `engine`, `page`, `world`, `burin`, `ink`, `modules`, `draw`, `paint` (a screen's layer, see [screens.md](screens.md)), `compose`, `view`: every function in `drawland_graph::FUNCTIONS`, every value in `PROPERTIES`; `drawland.d.ts` declares them (a test compares it with the JS face's `library_names()`).
 
 ## The frame: `page` and `world`
 

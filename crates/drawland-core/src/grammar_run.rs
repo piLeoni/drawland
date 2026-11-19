@@ -183,18 +183,100 @@ pub struct Drawn {
 /// generated, masked, cut and written a batch of strokes at a time, so the
 /// drawing is never in memory whole, as lines or as text.
 pub fn run_into(grammar: &Grammar, output: &Output, inputs: Inputs, draw: &Task, out: &mut crate::sheets::Out) -> Result<Drawn, RunError> {
-    run_graph(grammar, output, inputs, draw, out, None)
+    run_graph(grammar, output, inputs, draw, out, Want::Write)
 }
 
-/// [`run_into`], or with `collect` the groups handed back instead of written
-/// (a view, which its page writes).
+/// What one `paint` entry paints, in output millimetres: its geometry, and
+/// how the entry says to paint it.
+#[derive(Debug, Clone)]
+pub struct Painted {
+    pub id: String,
+    pub look: crate::paint::Look,
+    pub halo: crate::paint::Halo,
+    pub shape: PaintShape,
+}
+
+#[derive(Debug, Clone)]
+pub enum PaintShape {
+    Area(MultiPolygon<f64>),
+    Lines(Lines),
+    /// The names of the features, most important first (`labels::named`),
+    /// the text already read from the entry's `keys`.
+    Names(Vec<crate::labels::Named>),
+}
+
+/// The graph's `paint` entries evaluated against `inputs`, bottom first: the
+/// layers a screen is covered with (`drawland-grid` paints them).
+pub fn paint(grammar: &Grammar, output: &Output, inputs: Inputs, draw: &Task) -> Result<Vec<Painted>, RunError> {
+    if grammar.output.screen.is_none() {
+        return Err(RunError::Plan("paint: the output is paper; give it a screen, output({ screen: { kind, width, height } })".into()));
+    }
+    if !grammar.views.is_empty() {
+        return Err(RunError::Plan("views are drawn on paper; a screen has none yet".into()));
+    }
+    let mut painted = Vec::new();
+    run_graph(grammar, output, inputs, draw, &mut |_, _| {}, Want::Paint(&mut painted))?;
+    Ok(painted)
+}
+
+/// What a run makes of the evaluated graph.
+enum Want<'a> {
+    /// The SVG, written.
+    Write,
+    /// A view's groups, handed back for its page to write.
+    Collect(&'a mut Collected),
+    /// The paint entries' geometry, for a screen.
+    Paint(&'a mut Vec<Painted>),
+}
+
+/// Each paint entry's geometry, read from the evaluated graph.
+fn painted(grammar: &Grammar, values: &BTreeMap<Name, Value>, page: f64) -> Result<Vec<Painted>, RunError> {
+    use crate::paint::Look;
+    let mut out = Vec::new();
+    for p in &grammar.paint {
+        let shape = match (&p.from.module, &p.look) {
+            (Some(module), Look::Line(_)) => {
+                let value = module_output(module, &p.from.name.name, values, grammar)?;
+                let mut unused = BTreeMap::new();
+                match module_lines(module, &p.from.name.name, value, &p.id, &mut unused)? {
+                    Some(lines) => PaintShape::Lines(lines.clone()),
+                    None => return Err(RunError::Plan(format!("paint {:?}: {module}.{} is an area", p.id, p.from.name.name))),
+                }
+            }
+            (None, look) => {
+                let value = values
+                    .get(&p.from.name)
+                    .ok_or_else(|| RunError::Plan(format!("paint {:?}: {} was not evaluated", p.id, p.from.name)))?;
+                match look {
+                    Look::Fill(_) => PaintShape::Area(value.area(&p.from.name)?.clone()),
+                    Look::Line(_) => PaintShape::Lines(value.lines(&p.from.name)?.clone()),
+                    Look::Text(t) => {
+                        let mut names = crate::labels::named(value.features(&p.from.name)?, &t.keys, page);
+                        if t.upper {
+                            for n in &mut names {
+                                n.text = n.text.to_uppercase();
+                            }
+                        }
+                        PaintShape::Names(names)
+                    }
+                }
+            }
+            (Some(module), _) => return Err(RunError::Plan(format!("paint {:?}: {module}.{} is lines", p.id, p.from.name.name))),
+        };
+        out.push(Painted { id: p.id.clone(), look: p.look.clone(), halo: p.halo, shape });
+    }
+    Ok(out)
+}
+
+/// [`run_into`], or as `want` says: the groups handed back instead of
+/// written (a view, which its page writes), or a screen's paint entries.
 fn run_graph(
     grammar: &Grammar,
     output: &Output,
     mut inputs: Inputs,
     draw: &Task,
     out: &mut crate::sheets::Out,
-    collect: Option<&mut Collected>,
+    want: Want,
 ) -> Result<Drawn, RunError> {
     let view_inputs = std::mem::take(&mut inputs.views);
     let mut sources = Sources::new();
@@ -294,6 +376,14 @@ fn run_graph(
     let _cover_guard = CoverCacheGuard;
     let values = evaluate(grammar, &Found { osm: &features, tiles: &tiles, data: &data }, &engine, draw)?;
     probe(draw, "areas+lines");
+    let collect = match want {
+        Want::Write => None,
+        Want::Collect(c) => Some(c),
+        Want::Paint(into) => {
+            *into = painted(grammar, &values, w * h)?;
+            return Ok(Drawn { groups: Vec::new(), slices: Vec::new() });
+        }
+    };
 
     // The views first, under the page's own groups, and before the page
     // opens its own rows (a view has rows of the same names).
@@ -1456,7 +1546,7 @@ fn draw_views(
         let task = draw.child(&format!("view:{}", view.id), &format!("view {}", view.id), 0, "");
         let output = Output::new(&view.grammar.output, view.center());
         let mut got = Collected::new();
-        run_graph(&view.grammar, &output, input, &task, &mut |_, _| {}, Some(&mut got))
+        run_graph(&view.grammar, &output, input, &task, &mut |_, _| {}, Want::Collect(&mut got))
             .map_err(|e| RunError::Plan(format!("view {}: {e}", view.id)))?;
         let over: Vec<MultiPolygon<f64>> = grammar
             .compose
@@ -1550,6 +1640,7 @@ mod tests {
             padding: Default::default(),
             slices: Default::default(),
             tile_zoom: None,
+            screen: None,
         };
         Output::new(&map, (0.0, 0.0))
     }
@@ -1604,6 +1695,25 @@ mod tests {
 
         let bad = "output: { width: 100mm, height: 50mm }\n$areas:\n  f: { engine_frame: {} }\n  x: { tools_label_area: $areas.f }\n";
         assert!(from_yaml(bad).is_err(), "tools_label_area reads a labels def only");
+    }
+
+    #[test]
+    fn a_screen_hands_each_paint_entry_its_geometry() {
+        let grammar = from_yaml(
+            "output: { screen: { kind: bitmap, width: 40, height: 20 } }\n\
+             $areas:\n  page: { engine_frame: {} }\n  inner: { tools_grow: { of: $areas.page, by: -2mm } }\n\
+             $lines:\n  ring: { tools_rings: $areas.inner }\n\
+             paint:\n  - { id: ground, from: $areas.page, fill: { tone: 0.5 } }\n  - { id: edge, from: $lines.ring, halo: 1 }\n",
+        )
+        .unwrap();
+        let output = Output::new(&grammar.output, (0.0, 0.0));
+        let empty = BTreeMap::new();
+        let inputs = Inputs { features: vec![], tiles: vec![], sources: &empty, terrain: None, memory_budget: None, google_fonts: BTreeMap::new(), stroke_fonts: BTreeMap::new(), data: BTreeMap::new(), views: Vec::new() };
+        let layers = paint(&grammar, &output, inputs, &Task::begin(&(), "t", None, "t", 0, "")).unwrap();
+        assert_eq!(layers.iter().map(|l| l.id.as_str()).collect::<Vec<_>>(), ["ground", "edge"]);
+        assert!(matches!(&layers[0].shape, PaintShape::Area(a) if !a.0.is_empty()));
+        assert!(matches!(&layers[1].shape, PaintShape::Lines(l) if l.len() == 1));
+        assert_eq!(layers[1].halo, crate::paint::Halo(1, 1));
     }
 
     #[test]

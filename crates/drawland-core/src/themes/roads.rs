@@ -993,6 +993,7 @@ mod tests {
             padding: Default::default(),
             slices: Default::default(),
             tile_zoom: None,
+            screen: None,
         };
         let output = Output::new(&map, (0.0, 0.0));
         let features = vec![way("residential", 30.0), way("track", 10.0), way("service", 20.0)];
@@ -1036,6 +1037,7 @@ mod tests {
             padding: Default::default(),
             slices: Default::default(),
             tile_zoom: None,
+            screen: None,
         };
         let output = Output::new(&map, (0.0, 0.0));
         let line = |tags: &[(&str, &str)], from: (f64, f64), to: (f64, f64)| Feature {
@@ -1082,6 +1084,7 @@ mod tests {
             padding: Default::default(),
             slices: Default::default(),
             tile_zoom: None,
+            screen: None,
         };
         let output = Output::new(&map, (0.0, 0.0));
         let features = vec![way(&[("highway", "residential"), ("lanes", "2")], 30.0), way(&[("highway", "residential")], 10.0)];

@@ -54,6 +54,7 @@ pub(crate) struct Builder {
     pub defs: Vec<Def>,
     pub count: usize,
     pub draw: Vec<Draw>,
+    pub paint: Vec<drawland_core::paint::Paint>,
     pub order: Vec<Id>,
     pub order_at: Option<At>,
     pub masks: Vec<(String, Mask)>,
@@ -177,6 +178,18 @@ impl Graph {
         Ok(group)
     }
 
+    /// A layer of the screen: `from` (a reference) painted as `look` says.
+    pub(crate) fn add_paint(&mut self, id: String, from: &str, look: drawland_core::paint::Look, halo: drawland_core::paint::Halo) -> Result<String> {
+        let from = target(from).map_err(|e| self.error(format!("paint: {e}")))?;
+        look.validate().map_err(|e| self.error(format!("paint {id:?}: {e}")))?;
+        if self.top_ref().paint.iter().any(|p| p.id == id) {
+            return Err(self.error(format!("paint: the id {id:?} is already painted")));
+        }
+        let at = self.at;
+        self.top().paint.push(drawland_core::paint::Paint { id: id.clone(), from, look, halo, at });
+        Ok(id)
+    }
+
     pub(crate) fn set_order(&mut self, ids: Vec<String>) {
         let at = self.at;
         let b = self.top();
@@ -238,7 +251,15 @@ impl Graph {
             obj.insert("lng".into(), Value::from(lng));
         }
         self.top().frame = None;
-        let output: OutputSpec = serde_json::from_value(spec).map_err(|e| self.error(format!("output: {e}")))?;
+        if let Some(obj) = spec.as_object() {
+            if obj.contains_key("screen") {
+                if let Some(k) = ["width", "height", "padding", "slices"].into_iter().find(|k| obj.contains_key(*k)) {
+                    return Err(self.error(format!("output: a screen sets its own size; leave out {k}")));
+                }
+            }
+        }
+        let mut output: OutputSpec = serde_json::from_value(spec).map_err(|e| self.error(format!("output: {e}")))?;
+        output.fit_screen().map_err(|e| self.error(e))?;
         if self.top().output.replace(output).is_some() {
             return Err(self.error("output is set twice"));
         }
@@ -386,7 +407,7 @@ impl Builder {
             clip_default: self.clip.unwrap_or(Clip::Auto),
             optimize: self.optimize,
         };
-        let graph = Grammar { title: self.title, output, sections, draw: self.draw, compose, views: self.views };
+        let graph = Grammar { title: self.title, output, sections, draw: self.draw, compose, paint: self.paint, views: self.views };
         grammar::validate(&graph).map_err(|e| {
             let message = e.to_string();
             Error { at: find_at(&message), message, address: None }

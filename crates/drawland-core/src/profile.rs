@@ -87,6 +87,28 @@ pub struct OutputSpec {
     /// whose tiles stay under the download cap.
     #[serde(default, rename = "tileZoom", alias = "tile_zoom", skip_serializing_if = "Option::is_none")]
     pub tile_zoom: Option<u8>,
+    /// The output is a screen, not paper: pixels or character cells, its
+    /// size in mm following from theirs ([`OutputSpec::fit_screen`]). It is
+    /// covered by the graph's `paint` entries, not its `draw` ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen: Option<crate::paint::Screen>,
+}
+
+impl OutputSpec {
+    /// A screen's size in mm written into `width` and `height`, no padding
+    /// or slices: what every reader of the output sees. Paper is left as it is.
+    pub fn fit_screen(&mut self) -> Result<(), String> {
+        let Some(screen) = self.screen else { return Ok(()) };
+        screen.validate()?;
+        let (w, h) = screen.size_mm();
+        self.width = Mm(w);
+        self.height = Mm(h);
+        self.padding = MmXY::default();
+        if self.slices != crate::sheets::Slices::default() {
+            return Err("output.screen: a screen is not cut into slices".into());
+        }
+        Ok(())
+    }
 }
 
 fn default_width() -> Mm {

@@ -129,7 +129,7 @@ With no profile it draws the postcard, an example built in
 | `profile` | A profile script (`.js`, `.ts`) or a saved graph (`.json`); default `postcard`, the example built in |
 | `--address` / `--lat --lng` | Where; overrides the profile's `output({...})` |
 | `--dump-graph` | Print the graph the profile builds, as JSON, and stop |
-| `-o` | Output SVG (default `map.svg`) |
+| `-o` | Output SVG (default `map.svg`); for a screen profile `.png`, `.pbm`, `.txt`, `.ans`, `.html`, or `-` for the terminal |
 | `--per-layer` | Also one SVG per top-level layer (a file per pen) |
 | `--slices` | For a card cut into sheets: `whole`, `slices` or `both` (default) |
 | `--decimals` | Coordinate decimals in the SVG, 0 to 6 |
@@ -289,12 +289,44 @@ it (a `.ts` profile with `/// <reference path="drawland.d.ts" />`, or a `.js`
 one with `// @ts-check`). The Node package carries the same types for
 `Graph`.
 
+## Screens: bitmaps and text
+
+The same library paints screens too: a 1-bit **bitmap** for e-ink, OLED and
+other black-and-white displays, or a terminal's **text** cells, in colour.
+`output({ screen: { kind: "bitmap", width: 800, height: 480 } })` (or
+`kind: "text"`, in columns and rows) makes the output a screen, and `paint`
+covers it a layer at a time, each clearing its `halo` out of what is under it:
+
+```js
+paint({ id: "water", from: water, fill: { chars: ["~   ", "  ~ "], color: "#3d7fc4", background: "#0a2240" } })
+paint({ id: "buildings", from: buildings, fill: { blocks: true, color: "#2c313b" } })
+paint({ id: "roads", from: lines.of(roads), line: { style: "box", color: "#e2c15a" } })
+paint({ id: "names", from: features.tiles("road_names"), text: { color: "#eeeeee" } })
+```
+
+Areas take 8 × 8 pixel patterns, a dithered `tone`, tiled characters or
+quarter blocks; lines are pixel lines with no anti-aliasing, Braille dots,
+box drawing joined where lines cross, or ASCII; names are written in a pixel
+font (Spleen, four sizes) or a letter a cell, none over another. Patterns are
+fixed to the ground, so they stay put when the map moves.
+
+```bash
+drawland map configs/e-ink.js -o venice.png        # a 1-bit PNG (or .pbm)
+drawland map configs/terminal.js -o -              # straight to the terminal (or .ans, .txt, .html, .png)
+drawland view configs/terminal.js --address "Rialto, Venezia"   # arrows move, + and - zoom, q quits
+```
+
+| `configs/e-ink.js` (800 × 480) | `configs/terminal.js` (120 × 44 cells) |
+|---|---|
+| ![Venice on e-ink](docs/gallery/screen-e-ink.png) | ![Venice in a terminal](docs/gallery/screen-terminal.png) |
+
 ## Repository layout
 
 | Path | Role |
 |---|---|
 | `crates/drawland-graph` | The library: what a style calls, building the graph (`src/library.rs`) |
 | `crates/drawland-core` | The graph's runner: projection, OSM and tiles → features, fills, compose, SVG. No I/O. |
+| `crates/drawland-grid` | Screens: the graph's `paint` entries as a 1-bit bitmap or text cells (ANSI, HTML). No I/O. |
 | `crates/drawland-script` | Profile scripts: the JavaScript interpreter (Boa) and the library's JavaScript face (`src/library.js`) |
 | `crates/drawland-ts` | TypeScript profiles, their types blanked out |
 | `crates/drawland` | The library that draws a map: the script, the downloads and cache, the engine; the command line's code |
@@ -329,3 +361,6 @@ versions on crates.io, which is what CI does. Start reading at
 ## License
 
 MIT. Use it, change it, ship it, in anything.
+
+The pixel fonts built into `drawland-grid` are Spleen, © Frederic Cambus,
+under the BSD 2-clause license (`crates/drawland-grid/fonts/LICENSE-spleen`).

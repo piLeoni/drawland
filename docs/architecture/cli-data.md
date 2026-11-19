@@ -15,6 +15,8 @@ The `drawland` crate (`crates/drawland`) is the host in this repository: geocodi
 - SVG export: `--decimals <0..6>`, `--per-layer`, `--slices <whole|slices|both>` (`sheets::export_svg_files`)
 - Sheets (`sheets.rs`): `output.slices` cuts the card into `columns × rows` sheets, each inset by `padding` on the card's outside edges and by `gutter / 2` on each side of every cut. With `slices.overlap`, the sheets stay one size and each runs `overlap` mm over its neighbour, n sheets of `(size + (n−1)·overlap) / n`, so neighbours carry the same strip of drawing. That lets a poster be printed in tiles: with no gutter the drawing runs to every cut, so with `overlap` at least twice the printer's unprintable edge, that edge trimmed off one sheet and laid on the next, the drawing runs on without a gap. The whole SVG crops once to the union of the sheets' inner rectangles (`Layout::overlaps`), so the shared strips are not drawn twice; each sheet's SVG has its own full copy.
 
+- A screen profile (`output.screen`) is painted instead (`Drawer::make`): `-o` names the file by extension (`.png`, `.pbm`, `.txt`, `.ans`, `.html`), `-o -` prints it; default `map.png` / `map.ans`. Subcommand `view` moves round one in the terminal (`view.rs`). See [screens.md](screens.md).
+
 `generate.sh` wraps common invocations.
 
 ## Library API (`crates/drawland/src/lib.rs`)
@@ -23,6 +25,7 @@ The `drawland` crate (`crates/drawland`) is the host in this repository: geocodi
 - `Place { address, lat, lng }`, `Settings { cache, offline, refresh }`.
 - `Drawer::graph` runs the script only (an address is geocoded first, and again if the script asks `world` about its output's address); `Drawer::draw` = graph + `draw_graph` (locate, `gather` per page and per view, `run_with`). Styles a view names are `<name>.js` in the profile's folder.
 - `Map { title, svg, groups, slices }`, `Map::files(ExportOptions)` / `Map::save(out, …)` (`sheets::export_svg_files`).
+- `Drawer::paint` / `paint_graph` → `Painting { title, picture }` (`drawland_grid::Picture`), `Painting::save(out)`; `Drawer::make` → `Made::Paper(Map)` or `Made::Screen(Painting)`, as the output says. `draw_graph` refuses a screen.
 - Progress: any `Progress` (`&()` for none; `Term` paints the board on stderr).
 
 ## Bindings (`bindings/`)

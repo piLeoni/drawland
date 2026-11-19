@@ -798,6 +798,7 @@ dependencies = [
  "clap",
  "drawland-core",
  "drawland-graph",
+ "drawland-grid",
  "drawland-script",
  "geo",
  "libc",
@@ -846,6 +847,16 @@ version = "0.3.0"
 dependencies = [
  "drawland-core",
  "serde_json",
+]
+
+[[package]]
+name = "drawland-grid"
+version = "0.3.0"
+dependencies = [
+ "deunicode",
+ "drawland-core",
+ "geo",
+ "png 0.18.1",
 ]
 
 [[package]]
@@ -2060,6 +2071,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "png"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
+dependencies = [
+ "bitflags 2.13.2",
+ "crc32fast",
+ "fdeflate",
+ "flate2",
+ "miniz_oxide 0.8.9",
+]
+
+[[package]]
 name = "polycool"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3022,7 +3046,7 @@ version = "0.2.0"
 dependencies = [
  "flate2",
  "i_overlay",
- "png",
+ "png 0.17.16",
  "ureq",
 ]
 

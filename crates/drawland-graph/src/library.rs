@@ -67,6 +67,7 @@ pub const FUNCTIONS: &[&str] = &[
     "modules.labels",
     "modules.roads",
     "output",
+    "paint",
     "page.toWorld",
     "title",
     "view",
@@ -486,6 +487,8 @@ impl Graph {
                 let id = spec.get("id").map(stringify);
                 Ok(Arg::Str(self.add_draw(&from, id, spec.get("stroke"))?))
             }
+
+            "paint" => self.paint(args),
 
             "compose.order" => {
                 let items: &[Arg] = match args {
@@ -1215,6 +1218,53 @@ impl Graph {
             ("seams".into(), out("seams")),
             ("rails".into(), out("rails")),
         ])))
+    }
+
+    /// `paint({ id, from, fill | line | text, halo })`: a layer of the
+    /// screen. What `from` is decides the look it takes: an area a `fill`,
+    /// lines a `line`, features a `text`.
+    fn paint(&mut self, args: &[Arg]) -> Result<Arg> {
+        use drawland_core::paint::{Halo, Look};
+        let spec = self.object(at(args, 0), "paint")?.clone();
+        if let Some(extra) = spec.without(&["id", "from", "fill", "line", "text", "halo"]).keys().next() {
+            return self.fail(format!("paint: unknown key {extra} (id, from, fill, line, text, halo)"));
+        }
+        let id = match spec.get("id") {
+            Some(Arg::Str(s)) if !s.trim().is_empty() => s.clone(),
+            other => return self.fail(format!("paint: id names the layer, got {}", describe(other))),
+        };
+        let (from, key) = match spec.get("from") {
+            Some(Arg::Area { r, .. }) => (r.clone(), "fill"),
+            Some(Arg::Lines { r, .. }) => (r.clone(), "line"),
+            Some(Arg::Features(r)) => (r.clone(), "text"),
+            other => {
+                return self.fail(format!(
+                    "paint: from expects an area (filled), lines (lined) or features (named), got {}",
+                    describe(other)
+                ))
+            }
+        };
+        if let Some(other) = ["fill", "line", "text"].into_iter().find(|k| *k != key && spec.has(k)) {
+            let what = match key {
+                "fill" => "an area",
+                "line" => "lines",
+                _ => "features",
+            };
+            return self.fail(format!("paint {id:?}: from is {what}, painted with {key}, not {other}"));
+        }
+        let body = spec.get(key).map(Arg::to_json).unwrap_or_else(|| Value::Object(Map::new()));
+        let parse = |e: serde_json::Error| format!("paint {id:?}: {key}: {e}");
+        let look = match key {
+            "fill" => Look::Fill(serde_json::from_value(body).map_err(parse).or_else(|e| self.fail(e))?),
+            "line" => Look::Line(serde_json::from_value(body).map_err(parse).or_else(|e| self.fail(e))?),
+            _ => Look::Text(serde_json::from_value(body).map_err(parse).or_else(|e| self.fail(e))?),
+        };
+        let halo: Halo = match spec.get("halo") {
+            None | Some(Arg::Null) => Halo::default(),
+            Some(h) => serde_json::from_value(h.to_json())
+                .or_else(|_| self.fail(format!("paint {id:?}: halo is pixels or cells, n or [across, down], got {}", describe(Some(h)))))?,
+        };
+        Ok(Arg::Str(self.add_paint(id, &from, look, halo)?))
     }
 
     fn modules_graticule(&mut self, args: &[Arg]) -> Result<Arg> {

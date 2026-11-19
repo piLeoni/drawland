@@ -1,0 +1,46 @@
+# Screens: bitmaps and text
+
+## Purpose
+
+The same graph, painted on a grid instead of drawn on paper: a 1-bit **bitmap** (e-ink, OLED, any black-and-white display; PNG or PBM) or **text** cells (a terminal; plain text, ANSI truecolour, HTML, or a PNG picture of the cells). `output({ screen })` makes the output a screen, and `paint(...)` entries cover it, bottom first. A plotter's `draw` entries and `compose` (masks, optimize) are not used on a screen: a layer's `halo` is how it clears what lies under it.
+
+## Key files
+
+| File | Role |
+|------|------|
+| `drawland-core/src/paint.rs` | The spec: `Screen` (`kind`, `width`, `height`, `invert`), `PIXEL_MM`, `CELL_DOTS`, `Paint` and its `Look` (`FillPaint`, `LinePaint`, `TextPaint`), `Halo`, `Tile`, `Marker`, `Rgb`, the pattern and font names |
+| `drawland-core/src/profile.rs` | `OutputSpec::screen`, `OutputSpec::fit_screen` (the size in mm from the screen's) |
+| `drawland-core/src/grammar.rs` | `Grammar::paint`, its JSON (`paint: [{ id, from, fill | line | text, halo }]`), `validate_paint` |
+| `drawland-core/src/grammar_run.rs` | `grammar_run::paint` → `Vec<Painted>`: the graph evaluated as usual (`Want::Paint`), each entry handed its area, lines or names |
+| `drawland-core/src/labels.rs` | `labels::named`: the names of features before any font (text, rank, road chains), shared with the pen's labels |
+| `drawland-grid/` | The painter: `raster.rs` (scanline areas, Bresenham lines, cell walks, halo growth), `pattern.rs` (8×8 patterns, Bayer tone), `font.rs` (Spleen PSF fonts, built in), `place.rs` (names on the grid), `bitmap.rs`, `text.rs`, `lib.rs` (`render`, `origin`, `Picture`, `Format`) |
+| `drawland/src/lib.rs` | `Drawer::paint` / `paint_graph`, `Drawer::make` (paper or screen, as the output says), `Painting::save` |
+| `drawland/src/view.rs` | `drawland view`: the map in the terminal, moved with the keys |
+
+## Units
+
+A screen's size in mm follows from its grid, so every op (buffers, `page.width`, label padding) still works in mm: a pixel is `PIXEL_MM` (1/96 in, a CSS pixel), a text cell is `CELL_DOTS` (2 × 4) of them — a Braille character's dots, a cell twice as tall as wide. `fit_screen` writes the size into `width` and `height`; `output()` refuses `width`, `height`, `padding` and `slices` beside a `screen`. A text screen is painted on its dot grid (`2w × 4h`) where it needs sub-cell detail (Braille, quarter blocks) and on its cells otherwise.
+
+## Painting
+
+`drawland_grid::render(screen, origin, layers)`:
+
+1. Names are placed first (`place.rs`), the top text layer first, each layer's in `labels::named` order: whole pixels or cells, inside the grid, none within `padding` of another, `spacing` between two of one name. A point is centred, or beside its `marker` (right, left, above, below). An area's name goes at its interior point when the box fits inside it. A road's goes level on a straight, level stretch, or one letter under the other on a stretch running down the screen (a bitmap turns the letters a quarter); with neither, level across the road if the road is as long as the name.
+2. Each layer in order: its ink's cells or pixels grown by `halo` are cleared out of what is under it (a bitmap lays the other ink there; text blanks the characters and keeps the background colour), then it is painted:
+   - **fill**: `pattern` (8 × 8, `pattern.rs`) or `tone` (ordered Bayer dither); on text the same in Braille dots; `chars` tiled per row; `blocks` (quarter blocks from the dots); `background` (text cells' colour). `opaque` (default) clears the pattern's gaps.
+   - **line**: a bitmap line is stepped pixel to pixel (no anti-aliasing), widened by a round brush, dashed by steps. On text: Braille dots (default); box drawing (`box`, `heavy`, `double`, `round`) by cell walks, each cell keeping the sides its line leaves by, so lines that meet join (`┼`), and a stretch slanted more than 20° falls back to Braille rather than a staircase; `ascii` by slope (`- | / \`, `+` where they meet); `char`.
+   - **text**: Spleen glyphs on a bitmap, a letter a cell on text; marks.
+3. Braille dots, box joins and ASCII strokes in one cell add up across layers of the same colour and style.
+
+Patterns, tones and tiled characters are read at the dot's place in the **world**, not on the screen: `origin(output, screen)` is the screen's top-left in web Mercator dots at the output's scale, so a moved map keeps its waves on the water. Other projections read them from the screen's corner.
+
+## Hosts
+
+- `drawland map <profile>` writes a screen by the extension of `-o` (`.png`/`.pbm` bitmap, `.txt`/`.ans`/`.html` text, `.png` a picture of text cells; a bitmap written as text is drawn in Braille); `-o -` prints it to the terminal. Unset: `map.png` or `map.ans`.
+- `drawland view <profile>` (unix): raw mode on the alternate screen, the screen sized to the terminal (a bitmap in Braille, 2 × 4 pixels a cell); arrows / `hjkl` move a quarter screen (`Frame::to_world`), `+`/`-` halve or double the scale, `r` repaints, `q` quits. Keys pressed while a paint runs are gathered into one move. It changes the graph's output between paints; the script is not run again, so a script that reads `world` sees the first place.
+- Python and Node draw paper only for now (`Drawer::draw` refuses a screen); their faces have `paint`.
+- The web page does not paint screens yet. `drawland-grid` does no I/O and builds for WASM as it is; `Text::cell(x, y)` gives a page each cell's character and colours.
+
+## Profiles
+
+`configs/terminal.js` (text, Venice), `configs/e-ink.js` (800 × 480 bitmap, Venice, a Nolli plan).

@@ -1,0 +1,77 @@
+// Terminal: the map as character cells in colour. Water in tilde waves on
+// deep blue, buildings in quarter blocks (the calli show between them),
+// main roads in box drawing joined where they cross, the rest in Braille,
+// the names a letter a cell. `drawland map configs/terminal.js -o -` prints
+// it; `drawland view configs/terminal.js` moves round it.
+title("Terminal")
+
+// ---------------------------------------------------------------------------
+// 1. PARAMETERS & STYLE PALETTE
+// ---------------------------------------------------------------------------
+
+output({
+  lat: 45.4375,
+  lng: 12.3358,
+  scale: "1:15000",
+  projection: "webmercator",
+  screen: { kind: "text", width: 120, height: 44 },
+})
+
+const INK = {
+  land: "#14161b",
+  sea: "#0a2240",
+  wave: "#3d7fc4",
+  canal: "#4a90d9",
+  park: "#11301b",
+  leaf: "#4caf5c",
+  building: "#2c313b",
+  street: "#9aa0ab",
+  road: "#e2c15a",
+  rail: "#b07cd8",
+  name: "#eeeeee",
+  place: "#ffcc66",
+  waterName: "#86b8ff",
+}
+
+/** @type {string[]} */
+const WAVES = ["~     ", "   ~  "]
+const MAJOR = ["motorway", "trunk", "primary", "secondary"]
+const MINOR = ["tertiary", "minor", "service"]
+
+// ---------------------------------------------------------------------------
+// 2. FEATURES & GEOMETRY
+// ---------------------------------------------------------------------------
+
+const water = areas.polygons(features.tiles("water"))
+const canals = lines.of(features.tiles("waterway:canal,river,stream"))
+const parks = areas.polygons(features.tiles("parks", "grass", "forest"))
+const buildings = areas.polygons(features.tiles("buildings"))
+const roads = features.tiles("roads")
+const major = lines.of(features.where(roads, { class: MAJOR }))
+const minor = lines.of(features.where(roads, { class: MINOR }))
+const paths = lines.of(features.tiles("paths"))
+const rail = lines.of(features.tiles("rail"))
+
+// ---------------------------------------------------------------------------
+// 3. PAINT, bottom first
+// ---------------------------------------------------------------------------
+
+paint({ id: "land", from: page.frame, fill: { background: INK.land } })
+paint({ id: "water", from: water, fill: { chars: WAVES, color: INK.wave, background: INK.sea } })
+paint({ id: "canals", from: canals, line: { color: INK.canal } })
+paint({ id: "parks", from: parks, fill: { chars: "\"", color: INK.leaf, background: INK.park } })
+paint({ id: "buildings", from: buildings, fill: { blocks: true, color: INK.building } })
+paint({ id: "paths", from: paths, line: { color: INK.street } })
+paint({ id: "streets", from: minor, line: { color: INK.street } })
+paint({ id: "rail", from: rail, line: { style: "double", color: INK.rail } })
+paint({ id: "roads", from: major, line: { style: "box", color: INK.road } })
+
+// Names: places first (a mark, the name beside it), then water, then streets.
+paint({ id: "street_names", from: features.tiles("road_names"), text: { color: INK.name, spacing: 50 } })
+paint({ id: "water_names", from: features.tiles("water_name:*"), text: { color: INK.waterName } })
+paint({
+  id: "places",
+  from: features.tiles("place:city,town,village,suburb,quarter,neighbourhood,island"),
+  text: { upper: true, marker: "◆", color: INK.place, padding: 2 },
+  halo: [1, 0],
+})

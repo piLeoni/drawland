@@ -1,0 +1,159 @@
+//! draw.land on a screen. The graph's `paint` entries, evaluated by the
+//! engine ([`drawland_core::grammar_run::paint`]), are painted into a grid:
+//! a 1-bit bitmap for e-ink, OLED and other black-and-white displays, or
+//! character cells for a terminal. Each layer is painted over the ones
+//! before, its `halo` cleared out of them first; names are placed in whole
+//! pixels or cells, none over another.
+//!
+//! ```no_run
+//! # fn layers() -> Vec<drawland_core::grammar_run::Painted> { vec![] }
+//! # let output: drawland_core::output::Output = unimplemented!();
+//! # let screen: drawland_core::paint::Screen = unimplemented!();
+//! let picture = drawland_grid::render(&screen, drawland_grid::origin(&output, &screen), &layers());
+//! std::fs::write("map.ans", picture.encode(drawland_grid::Format::Ansi, "map")?)?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+
+pub mod bitmap;
+pub mod font;
+pub mod pattern;
+pub mod place;
+pub mod raster;
+pub mod text;
+
+pub use bitmap::Bitmap;
+pub use text::Text;
+
+use drawland_core::grammar_run::{PaintShape, Painted};
+use drawland_core::output::Output;
+use drawland_core::paint::{Look, Screen, ScreenKind, PIXEL_MM};
+use drawland_core::profile::ProjectionMode;
+
+/// A painted screen.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Picture {
+    Bitmap(Bitmap),
+    Text(Text),
+}
+
+/// How a picture is written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Format {
+    /// A 1-bit PNG (a bitmap), or a picture of the cells (text).
+    Png,
+    /// A binary PBM (a bitmap).
+    Pbm,
+    /// The characters alone.
+    Txt,
+    /// The characters in colour, for a terminal.
+    Ansi,
+    /// A web page of the characters in colour.
+    Html,
+}
+
+impl Format {
+    /// The format a file's extension asks: `png`, `pbm`, `txt`, `ans`, `html`.
+    pub fn from_extension(ext: &str) -> Option<Format> {
+        Some(match ext.to_ascii_lowercase().as_str() {
+            "png" => Format::Png,
+            "pbm" => Format::Pbm,
+            "txt" => Format::Txt,
+            "ans" | "ansi" => Format::Ansi,
+            "html" | "htm" => Format::Html,
+            _ => return None,
+        })
+    }
+
+    /// The extension a screen is written with when nothing says.
+    pub fn default_for(kind: ScreenKind) -> Format {
+        match kind {
+            ScreenKind::Bitmap => Format::Png,
+            ScreenKind::Text => Format::Ansi,
+        }
+    }
+
+    pub fn extension(&self) -> &'static str {
+        match self {
+            Format::Png => "png",
+            Format::Pbm => "pbm",
+            Format::Txt => "txt",
+            Format::Ansi => "ans",
+            Format::Html => "html",
+        }
+    }
+}
+
+impl Picture {
+    /// The picture as `format` writes it. A bitmap written as text is drawn
+    /// in Braille; text written as PNG is a picture of the terminal.
+    pub fn encode(&self, format: Format, title: &str) -> Result<Vec<u8>, String> {
+        match (self, format) {
+            (Picture::Bitmap(b), Format::Png) => b.png(),
+            (Picture::Bitmap(b), Format::Pbm) => Ok(b.pbm()),
+            (Picture::Bitmap(b), f) => Picture::Text(b.braille()).encode(f, title),
+            (Picture::Text(t), Format::Txt) => Ok(t.txt().into_bytes()),
+            (Picture::Text(t), Format::Ansi) => Ok(t.ansi().into_bytes()),
+            (Picture::Text(t), Format::Html) => Ok(t.html(title).into_bytes()),
+            (Picture::Text(t), Format::Png) => t.png(),
+            (Picture::Text(_), f) => Err(format!("a text screen is written as txt, ans, html or png, not {}", f.extension())),
+        }
+    }
+
+    /// The picture as a terminal shows it: text in colour, a bitmap in
+    /// Braille.
+    pub fn ansi(&self) -> String {
+        match self {
+            Picture::Bitmap(b) => b.braille().ansi(),
+            Picture::Text(t) => t.ansi(),
+        }
+    }
+}
+
+/// Where the screen's top-left dot is in the world's dots: what patterns
+/// and tiled characters are read against, so they stay on the ground as
+/// the map moves. On web Mercator a dot of the world is fixed for a scale;
+/// any other projection reads them from the screen's corner.
+pub fn origin(output: &Output, screen: &Screen) -> (i64, i64) {
+    if output.projection != ProjectionMode::Webmercator {
+        return (0, 0);
+    }
+    const R: f64 = 6_378_137.0;
+    let (lon, lat) = output.center;
+    let lat = lat.clamp(-85.05, 85.05);
+    let x = R * lon.to_radians();
+    let y = R * (std::f64::consts::FRAC_PI_4 + lat.to_radians() / 2.0).tan().ln();
+    // Mercator metres a dot: the page is scaled to its centre's latitude.
+    let per_dot = PIXEL_MM / 1000.0 * output.scale / lat.to_radians().cos();
+    let (w, h) = screen.dots();
+    ((x / per_dot).round() as i64 - w as i64 / 2, (-y / per_dot).round() as i64 - h as i64 / 2)
+}
+
+/// The layers, bottom first, painted on `screen`; `origin` from [`origin`].
+pub fn render(screen: &Screen, origin: (i64, i64), layers: &[Painted]) -> Picture {
+    let cells = screen.kind == ScreenKind::Text;
+    let unit_mm = screen.unit_mm();
+    let size = (screen.width as i64, screen.height as i64);
+    let texts: Vec<place::Layer> = layers
+        .iter()
+        .enumerate()
+        .filter_map(|(index, l)| match (&l.look, &l.shape) {
+            (Look::Text(t), PaintShape::Names(names)) => {
+                let letter = if cells {
+                    (1, 1)
+                } else {
+                    let f = font::font(&t.font)?;
+                    (f.width as i64, f.height as i64)
+                };
+                Some(place::Layer { index, paint: t, names, metrics: place::Metrics { letter, unit_mm, size } })
+            }
+            _ => None,
+        })
+        .collect();
+    let placed = place::place(&texts, size);
+    match screen.kind {
+        ScreenKind::Bitmap => {
+            Picture::Bitmap(bitmap::paint(layers, &placed, screen.width as usize, screen.height as usize, screen.invert, origin))
+        }
+        ScreenKind::Text => Picture::Text(text::paint(layers, &placed, screen.width as usize, screen.height as usize, origin)),
+    }
+}

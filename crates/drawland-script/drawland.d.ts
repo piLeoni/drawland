@@ -587,7 +587,113 @@ interface OutputOptions {
    * 13), shallower downloads fewer tiles. Unset, the deepest under the cap.
    */
   tileZoom?: number
+  /**
+   * A screen instead of paper: a 1-bit bitmap (`"bitmap"`, `width` × `height`
+   * pixels: e-ink, OLED and other black-and-white displays) or a terminal's
+   * character cells (`"text"`, `width` columns × `height` rows). The size in
+   * mm follows from it (a pixel is 1/96 in; a cell is 2 × 4 of them), so
+   * leave out `width`, `height`, `padding` and `slices`. A screen is covered
+   * by `paint` entries, not `draw` ones; the command line writes it as
+   * `.png`/`.pbm` or `.txt`/`.ans`/`.html`.
+   */
+  screen?: Screen
 }
+
+/** The screen an output is painted on. */
+interface Screen {
+  kind: "bitmap" | "text"
+  /** Pixels across (bitmap) or columns (text). */
+  width: number
+  /** Pixels down (bitmap) or rows (text). */
+  height: number
+  /** White ink on black (an OLED): the bitmap's pixels flipped as it is written. */
+  invert?: boolean
+}
+
+/** A colour: `#rgb`, `#rrggbb`, or a terminal name (`black`, `red`, `blue`, `brightcyan`, `gray`…). */
+type Color = string
+
+/** The patterns a screen area is filled with, 8 × 8 pixels each (on text, in Braille dots). */
+type ScreenPattern =
+  | "solid" | "dots" | "sparse" | "grid" | "lines" | "columns" | "hatch" | "backhatch" | "cross" | "checker"
+  | "bricks" | "waves" | "stipple" | "diamonds"
+
+/** How a screen area is covered: one of `pattern`, `tone`, `chars`, `blocks`, and/or a `background`. */
+interface FillPaint {
+  /** A pixel pattern, tiled from a fixed point of the world so it stays put as the map moves. */
+  pattern?: ScreenPattern
+  /** A grey, 0 (white) to 1 (black), dithered (ordered, so it holds still as the map moves). */
+  tone?: number
+  /** Text: characters tiled over the area, a string along each row or rows of them (`["~ ", " ~"]`). */
+  chars?: string | string[]
+  /** Text: the area in quarter-cell blocks (`▖▝▀▙█`), its edge twice as fine as a cell. */
+  blocks?: boolean
+  /** Text: the characters' colour. */
+  color?: Color
+  /** Text: the cells' colour under the characters. */
+  background?: Color
+  /** Bitmap: the ink the pattern is laid in, `"black"` (default) or `"white"`. */
+  ink?: "black" | "white"
+  /** Default `true`: the pattern's gaps are cleared. `false`: what lies under shows through them. */
+  opaque?: boolean
+}
+
+/** How lines are drawn on a screen, with no anti-aliasing. */
+interface LinePaint {
+  /** Bitmap: pixels across. Default 1. */
+  width?: number
+  /** Bitmap: pixels on, pixels off. */
+  dash?: [number, number]
+  /** Bitmap: `"black"` (default) or `"white"`. */
+  ink?: "black" | "white"
+  /**
+   * Text: Braille dots (default, the finest), box drawing joined where lines
+   * meet (`"box"`, `"heavy"`, `"double"`, `"round"`: a slanted stretch is
+   * drawn in dots), or `"ascii"` (`- | / \ +`).
+   */
+  style?: "braille" | "box" | "heavy" | "double" | "round" | "ascii"
+  /** Text: one character in every cell the line crosses. */
+  char?: string
+  color?: Color
+  background?: Color
+}
+
+/** How names are written on a screen: level, or along a road that runs down the screen one letter under the other; none over another. */
+interface TextPaint {
+  /** The tags the name is read from, the first one present. Default `["name"]`. */
+  keys?: string[]
+  /** In capitals. */
+  upper?: boolean
+  /** Bitmap: a pixel font (Spleen). Default `"spleen-6x12"`. */
+  font?: "spleen-5x8" | "spleen-6x12" | "spleen-8x16" | "spleen-12x24"
+  /** A mark at a place's point, its name beside it: a character on text (`"•"`), a dot so many pixels across on a bitmap (`4`). */
+  marker?: string | number
+  /** Pixels or cells between two labels of the same name. Default 60. */
+  spacing?: number
+  /** Clear pixels or cells kept between this layer's names and any other's. Default 1. */
+  padding?: number
+  /** Bitmap: `"black"` (default) or `"white"`. */
+  ink?: "black" | "white"
+  color?: Color
+  background?: Color
+}
+
+interface PaintBase {
+  /** The layer's name. */
+  id: string
+  /**
+   * Clear space kept round this layer's ink in the layers under it, in
+   * pixels or cells: one for both ways, or `[across, down]`. On a bitmap the
+   * halo is the other ink (white round black).
+   */
+  halo?: number | [number, number]
+}
+
+/** One layer of a screen: an area filled, lines lined or features named, by what `from` is. */
+type PaintOptions =
+  | (PaintBase & { from: Area; fill: FillPaint })
+  | (PaintBase & { from: Lines; line?: LinePaint })
+  | (PaintBase & { from: Features; text?: TextPaint })
 
 type Warp =
   | { fisheye: number }
@@ -1338,6 +1444,16 @@ type Labels = {
 
 /** Put lines on paper; returns the group id. Later draws go on top. */
 declare function draw(options: DrawOptions): string
+
+/**
+ * Paint a layer of the screen (`output({ screen })`); returns its id. Later
+ * layers go on top, each clearing its `halo` out of those under it:
+ *
+ *   paint({ id: "water", from: water, fill: { chars: ["~ ", " ~"], color: "#3d7fc4", background: "#0a2240" } })
+ *   paint({ id: "roads", from: lines.of(roads), line: { style: "box" }, halo: 1 })
+ *   paint({ id: "names", from: features.tiles("road_names"), text: { font: "spleen-6x12" }, halo: 1 })
+ */
+declare function paint(options: PaintOptions): string
 
 type LayerTargets = string | string[]
 

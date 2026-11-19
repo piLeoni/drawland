@@ -546,7 +546,7 @@ pub fn library_names() -> Result<Vec<String>, ScriptError> {
     let mut ctx = Context::default();
     let listed = install(&mut ctx).map_err(|e| ScriptError { message: format!("library: {e}"), at: None, address: None }).and_then(|_| {
         ctx.eval(Source::from_bytes(
-            "JSON.stringify(['features','areas','engine','page','world','lines','fills','burin','ink','modules','draw','compose','output','title','view'].flatMap((n) => typeof globalThis[n] === 'function' ? [n] : [n, ...Object.keys(globalThis[n]).filter((k) => typeof Object.getOwnPropertyDescriptor(globalThis[n], k).value === 'function').map((k) => n + '.' + k)]))",
+            "JSON.stringify(['features','areas','engine','page','world','lines','fills','burin','ink','modules','draw','paint','compose','output','title','view'].flatMap((n) => typeof globalThis[n] === 'function' ? [n] : [n, ...Object.keys(globalThis[n]).filter((k) => typeof Object.getOwnPropertyDescriptor(globalThis[n], k).value === 'function').map((k) => n + '.' + k)]))",
         ))
         .and_then(|v| v.to_string(&mut ctx))
         .map_err(|e| ScriptError { message: e.to_string(), at: None, address: None })

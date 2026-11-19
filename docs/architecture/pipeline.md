@@ -15,6 +15,8 @@ Turn a **place** and a **profile** into a single layered **SVG** measured in pap
    - Google font bytes when labels request `{ origin: "google", … }`.
 4. **Run** — `grammar_run::run` evaluates the def DAG, then applies `draw` + `compose` (masks, clip) and writes SVG.
 
+A screen output (`output.screen`) ends differently: `grammar_run::paint` hands each `paint` entry its geometry and `drawland-grid` paints a bitmap or text cells (see [screens.md](screens.md)).
+
 ## Output model
 
 `Output` (`output.rs`) holds centre, `width_mm` / `height_mm`, scale denominator, bearing, projection mode, optional `tile_zoom`. Ground extent follows from scale and paper size; `query_polygon()` drives Overpass and tile selection.

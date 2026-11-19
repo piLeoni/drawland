@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/drawland-core", "crates/drawland-graph", "crates/drawland-ts", "crates/drawland-script", "crates/drawland", "crates/drawland-cli", "bindings/python", "bindings/node"]
+members = ["crates/drawland-core", "crates/drawland-graph", "crates/drawland-grid", "crates/drawland-ts", "crates/drawland-script", "crates/drawland", "crates/drawland-cli", "bindings/python", "bindings/node"]
 resolver = "2"
 
 [workspace.package]
@@ -12,6 +12,7 @@ homepage = "https://draw.land"
 [workspace.dependencies]
 drawland-core = { path = "crates/drawland-core", version = "0.3.0" }
 drawland-graph = { path = "crates/drawland-graph", version = "0.3.0" }
+drawland-grid = { path = "crates/drawland-grid", version = "0.3.0" }
 drawland-ts = { path = "crates/drawland-ts", version = "0.3.0" }
 drawland-script = { path = "crates/drawland-script", version = "0.3.0" }
 drawland = { path = "crates/drawland", version = "0.3.0" }
@@ -44,6 +45,7 @@ approx = "0.5"
 ttf-parser = { version = "0.25", features = ["std"] }
 deunicode = "1.6"
 wuff = { version = "0.2.9", features = ["brotli", "z"] }
+png = "0.18"
 
 [profile.release]
 lto = true

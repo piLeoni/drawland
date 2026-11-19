@@ -20,9 +20,11 @@ pub mod cli;
 mod fonts;
 mod http;
 mod term;
+mod view;
 
 pub use drawland_core;
 pub use drawland_graph;
+pub use drawland_grid;
 pub use drawland_core::sheets::{ExportOptions, SliceExport};
 pub use drawland_script;
 pub use term::Term;
@@ -122,7 +124,8 @@ impl Profile {
         Profile::script(POSTCARD, Path::new("."))
     }
 
-    fn dir(&self) -> &Path {
+    /// The folder the profile reads beside it.
+    pub fn dir(&self) -> &Path {
         match self {
             Profile::Script { dir, .. } => dir,
             Profile::Graph(_) => Path::new("."),
@@ -164,6 +167,32 @@ impl Map {
             written.push(path);
         }
         Ok(written)
+    }
+}
+
+/// What a profile makes: a map on paper, or a painted screen.
+#[derive(Clone, Debug)]
+pub enum Made {
+    Paper(Map),
+    Screen(Painting),
+}
+
+/// A painted screen: what a profile whose output is a screen makes.
+#[derive(Clone, Debug)]
+pub struct Painting {
+    pub title: Option<String>,
+    pub picture: drawland_grid::Picture,
+}
+
+impl Painting {
+    /// Write it to `out`, as its extension says (`png`, `pbm`, `txt`, `ans`,
+    /// `html`).
+    pub fn save(&self, out: &Path) -> Result<(), String> {
+        let ext = out.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let format = drawland_grid::Format::from_extension(ext)
+            .ok_or_else(|| format!("{}: a screen is written as .png, .pbm, .txt, .ans or .html", out.display()))?;
+        let bytes = self.picture.encode(format, self.title.as_deref().unwrap_or("draw.land"))?;
+        std::fs::write(out, bytes).map_err(|e| format!("{}: {e}", out.display()))
     }
 }
 
@@ -234,6 +263,9 @@ impl Drawer {
 
     /// A graph drawn at `place`; files it names are read from `dir`.
     pub fn draw_graph(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress) -> Result<Map, String> {
+        if grammar.output.screen.is_some() {
+            return Err("this profile paints a screen (output.screen), not paper: paint it (Drawer::paint)".into());
+        }
         // A page of views needs no place of its own; each view has one.
         let placeless = !grammar.views.is_empty()
             && place.address.is_none()
@@ -261,6 +293,50 @@ impl Drawer {
         let rendered = drawland_core::grammar_run::run_with(grammar, &output, inputs, &draw).map_err(|e| e.to_string())?;
         draw.ok("");
         Ok(Map { title: grammar.title.clone(), svg: rendered.svg, groups: rendered.groups, slices: rendered.slices })
+    }
+
+    /// `profile` at `place`, as its output asks: drawn on paper, or painted
+    /// on a screen.
+    pub fn make(&self, profile: &Profile, place: &Place, progress: &dyn Progress) -> Result<Made, String> {
+        let grammar = self.graph(profile, place, progress)?;
+        let place = match (place.lat, place.lng, &place.address) {
+            (None, None, Some(_)) => Place { address: None, lat: grammar.output.lat, lng: grammar.output.lng },
+            _ => place.clone(),
+        };
+        if grammar.output.screen.is_some() {
+            self.paint_graph(&grammar, &place, profile.dir(), progress).map(Made::Screen)
+        } else {
+            self.draw_graph(&grammar, &place, profile.dir(), progress).map(Made::Paper)
+        }
+    }
+
+    /// `profile` painted at `place` on the screen its output names
+    /// (`output.screen`): a bitmap or a grid of text cells.
+    pub fn paint(&self, profile: &Profile, place: &Place, progress: &dyn Progress) -> Result<Painting, String> {
+        let grammar = self.graph(profile, place, progress)?;
+        let place = match (place.lat, place.lng, &place.address) {
+            (None, None, Some(_)) => Place { address: None, lat: grammar.output.lat, lng: grammar.output.lng },
+            _ => place.clone(),
+        };
+        self.paint_graph(&grammar, &place, profile.dir(), progress)
+    }
+
+    /// A graph painted at `place` on its screen; files it names are read
+    /// from `dir`.
+    pub fn paint_graph(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress) -> Result<Painting, String> {
+        let Some(screen) = grammar.output.screen else {
+            return Err("this profile draws paper: give its output a screen, output({ screen: { kind, width, height } })".into());
+        };
+        let task = Task::begin(progress, "locate", None, "locate", 0, "");
+        let center = self.locate(&task, place, grammar)?;
+        task.ok("");
+        let output = Output::new(&grammar.output, center);
+        let page = self.gather(progress, grammar, &output, dir, "")?;
+        let draw = Task::begin(progress, "draw", None, "paint", 0, "");
+        let layers = drawland_core::grammar_run::paint(grammar, &output, page.inputs(), &draw).map_err(|e| e.to_string())?;
+        let picture = drawland_grid::render(&screen, drawland_grid::origin(&output, &screen), &layers);
+        draw.ok(&format!("{} layers · {} × {}", layers.len(), screen.width, screen.height));
+        Ok(Painting { title: grammar.title.clone(), picture })
     }
 
     /// The output's centre `(lng, lat)`: the place given, then the profile's.

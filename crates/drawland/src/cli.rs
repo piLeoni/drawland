@@ -1,7 +1,7 @@
 //! `drawland map`: the command line, as a function of its arguments, so the
 //! binary, `pip install drawland` and `npm install drawland` run the same one.
 
-use crate::{Drawer, ExportOptions, Place, Profile, Settings, SliceExport, Term};
+use crate::{Drawer, ExportOptions, Made, Place, Profile, Settings, SliceExport, Term};
 use clap::{Parser, Subcommand, ValueEnum};
 use drawland_core::progress::{Event, Level, Progress};
 use std::ffi::OsString;
@@ -9,7 +9,7 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
-#[command(name = "drawland", version, about = "draw.land: maps drawn for pen plotters")]
+#[command(name = "drawland", version, about = "draw.land: maps drawn for pen plotters, and painted on screens")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -55,8 +55,13 @@ enum Command {
         lat: Option<f64>,
         #[arg(long, requires = "lat", allow_hyphen_values = true)]
         lng: Option<f64>,
-        #[arg(long = "output", short, default_value = "map.svg")]
-        out: PathBuf,
+        /// The file written: `.svg` for paper; for a screen (`output.screen`)
+        /// `.png` or `.pbm` (a bitmap), `.txt`, `.ans` or `.html` (text, or a
+        /// bitmap in Braille). `-` prints it (a screen in colour, paper as
+        /// SVG). Unset:
+        /// `map.svg`, or `map.png` / `map.ans` for a screen.
+        #[arg(long = "output", short)]
+        out: Option<PathBuf>,
         /// Coordinate decimal places in SVG output (0..6); default is full (4).
         #[arg(long, value_parser = clap::value_parser!(u8).range(0..=6))]
         decimals: Option<u8>,
@@ -75,6 +80,23 @@ enum Command {
         /// Download again even when the reply is cached.
         #[arg(long, conflicts_with = "offline")]
         refresh: bool,
+    },
+    /// Move round a screen profile's map in the terminal: arrows (or h j k
+    /// l) move, + and - zoom, q quits. The screen is the terminal's size.
+    View {
+        /// A profile whose output is a screen (`output({ screen: … })`).
+        profile: PathBuf,
+        /// Street address, looked up with Nominatim. Overrides the profile.
+        #[arg(long, conflicts_with_all = ["lat", "lng"])]
+        address: Option<String>,
+        #[arg(long, requires = "lng", allow_hyphen_values = true)]
+        lat: Option<f64>,
+        #[arg(long, requires = "lat", allow_hyphen_values = true)]
+        lng: Option<f64>,
+        #[arg(long, default_value = "cache")]
+        cache: PathBuf,
+        #[arg(long)]
+        offline: bool,
     },
 }
 
@@ -99,7 +121,22 @@ where
             return if e.use_stderr() { 2 } else { 0 };
         }
     };
-    let Command::Map { profile, dump_graph, address, lat, lng, out, decimals, per_layer, slices, cache, offline, refresh } = cli.command;
+    let (profile, dump_graph, address, lat, lng, out, decimals, per_layer, slices, cache, offline, refresh) = match cli.command {
+        Command::Map { profile, dump_graph, address, lat, lng, out, decimals, per_layer, slices, cache, offline, refresh } => {
+            (profile, dump_graph, address, lat, lng, out, decimals, per_layer, slices, cache, offline, refresh)
+        }
+        Command::View { profile, address, lat, lng, cache, offline } => {
+            let drawer = Drawer::new(Settings { cache, offline, refresh: false });
+            let result = profile_at(&profile).and_then(|p| crate::view::run(&drawer, &p, &Place { address, lat, lng }));
+            return match result {
+                Ok(()) => 0,
+                Err(e) => {
+                    eprintln!("{}: {e}", profile.display());
+                    1
+                }
+            };
+        }
+    };
     let located = |e: String| format!("{}: {e}", profile.display());
     if dump_graph {
         // No network for a dump: an address comes from the cache or not at all.
@@ -120,23 +157,49 @@ where
     let export = ExportOptions { decimals, per_layer, slices: slices.into() };
     let term = Term::new();
     let drawer = Drawer::new(Settings { cache, offline, refresh });
+    let mut printed: Option<String> = None;
     let result = profile_at(&profile)
-        .and_then(|p| drawer.draw(&p, &Place { address, lat, lng }, &term).map_err(located))
-        .and_then(|map| {
-            let written = map.save(&out, export)?;
-            let extra = written.len().saturating_sub(1);
-            let note = if extra == 0 { out.display().to_string() } else { format!("{} + {extra} files", out.display()) };
-            term.event(Event::Log { level: Level::Info, text: &format!("saved {note}") });
-            Ok(())
+        .and_then(|p| drawer.make(&p, &Place { address, lat, lng }, &term).map_err(located))
+        .and_then(|made| match made {
+            Made::Paper(map) => {
+                if out.as_deref() == Some(Path::new("-")) {
+                    printed = Some(map.svg);
+                    return Ok(PathBuf::from("-"));
+                }
+                let out = out.clone().unwrap_or_else(|| PathBuf::from("map.svg"));
+                let written = map.save(&out, export)?;
+                let extra = written.len().saturating_sub(1);
+                let note = if extra == 0 { out.display().to_string() } else { format!("{} + {extra} files", out.display()) };
+                term.event(Event::Log { level: Level::Info, text: &format!("saved {note}") });
+                Ok(out)
+            }
+            Made::Screen(painting) => {
+                if out.as_deref() == Some(Path::new("-")) {
+                    printed = Some(painting.picture.ansi());
+                    return Ok(PathBuf::from("-"));
+                }
+                let out = out.clone().unwrap_or_else(|| {
+                    let kind = match &painting.picture {
+                        drawland_grid::Picture::Bitmap(_) => drawland_core::paint::ScreenKind::Bitmap,
+                        drawland_grid::Picture::Text(_) => drawland_core::paint::ScreenKind::Text,
+                    };
+                    PathBuf::from(format!("map.{}", drawland_grid::Format::default_for(kind).extension()))
+                });
+                painting.save(&out)?;
+                term.event(Event::Log { level: Level::Info, text: &format!("saved {}", out.display()) });
+                Ok(out)
+            }
         });
     if let Err(e) = &result {
         term.event(Event::Log { level: Level::Error, text: e });
     }
     term.finish();
     match result {
-        Ok(()) => {
-            // The file's path for scripts; on a terminal the log says it.
-            if !std::io::stdout().is_terminal() {
+        Ok(out) => {
+            if let Some(text) = printed {
+                print!("{text}");
+            } else if !std::io::stdout().is_terminal() {
+                // The file's path for scripts; on a terminal the log says it.
                 println!("{}", out.display());
             }
             0

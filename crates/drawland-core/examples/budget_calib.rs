@@ -49,6 +49,7 @@ fn main() {
         padding: Default::default(),
         slices: Default::default(),
         tile_zoom: None,
+        screen: None,
     };
     let output = drawland_core::output::Output::new(&spec, (0.0, 0.0));
     const NAMES: &[&str] = &[

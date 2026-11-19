@@ -24,6 +24,7 @@ Do **not** load every architecture file for small edits. Do **not** treat `refer
 |-------|------|
 | `drawland-graph` | The library: builds the graph from calls, by name or typed |
 | `drawland-core` | Graph validation, geometry, fills, compose, SVG — no network/files |
+| `drawland-grid` | A screen painted from the graph's `paint` entries: 1-bit bitmap or text cells (ANSI, HTML) — no network/files |
 | `drawland-script` | Boa interpreter + `library.js` (the JS face) → graph |
 | `drawland-ts` | TypeScript profiles: types blanked, positions kept |
 | `drawland` | The host as a library: geocode, Overpass, tiles, terrain, fonts, cache → `Drawer::draw`; `cli::run` is the command line |

@@ -383,17 +383,72 @@ fn pin_rank(f: &Feature) -> f64 {
     0.2
 }
 
-enum Shape {
+/// Where a name goes: along a road, inside an area, beside a point.
+#[derive(Debug, Clone)]
+pub enum Shape {
     Road(Vec<Coord<f64>>),
     Area(Polygon<f64>),
     Pin(Coord<f64>),
 }
 
+/// A name to place, before any font: what it says, where, and how much it
+/// matters. The pen's labels and a screen's are placed from these.
+#[derive(Debug, Clone)]
+pub struct Named {
+    pub text: String,
+    /// 0 to 1: a city over a village, a motorway over a lane, a big park
+    /// over a small one.
+    pub rank: f64,
+    /// Length or the square root of the area, mm: the tie-break, larger first.
+    pub extent: f64,
+    pub shape: Shape,
+    /// The feature it names (the first piece of a road's chain), in `features`.
+    pub feature: usize,
+}
+
+/// The names of `features` (output millimetres), most important first. A
+/// road comes in pieces: one chain per name and class, so a street is one
+/// name however the data cut it. `page` is the page's area, mm², which an
+/// area's rank is a share of.
+pub fn named(features: &[Feature], keys: &[String], page: f64) -> Vec<Named> {
+    let page = page.max(1.0);
+    let mut out = Vec::new();
+    let mut roads: BTreeMap<(String, String), (f64, Lines, usize)> = BTreeMap::new();
+    for (i, f) in features.iter().enumerate() {
+        let Some(text) = pick_feature_label(f, keys) else {
+            continue;
+        };
+        let text = text.to_string();
+        let polys = geom::polygons(&f.geometry);
+        if let Some(poly) = polys.into_iter().max_by(|a, b| a.unsigned_area().total_cmp(&b.unsigned_area())) {
+            let area = poly.unsigned_area();
+            let rank = (0.25 + (area / page).sqrt()).min(1.0);
+            out.push(Named { text, rank, extent: area.sqrt(), shape: Shape::Area(poly), feature: i });
+        } else if let geo::Geometry::Point(p) = &f.geometry {
+            out.push(Named { text, rank: pin_rank(f), extent: 1.0, shape: Shape::Pin(p.0), feature: i });
+        } else {
+            let class = f.tag("class").or_else(|| f.tag("highway")).unwrap_or("").to_string();
+            let entry = roads.entry((text, class)).or_insert_with(|| (road_rank(f), Vec::new(), i));
+            entry.1.extend(geom::lines_of(&f.geometry));
+        }
+    }
+    for ((text, _), (rank, lines, feature)) in roads {
+        for chain in geom::linemerge(&lines) {
+            let pts: Vec<Coord<f64>> = chain.0;
+            if pts.len() < 2 {
+                continue;
+            }
+            let extent = Path::new(pts.clone()).length();
+            out.push(Named { text: text.clone(), rank, extent, shape: Shape::Road(pts), feature });
+        }
+    }
+    out.sort_by(|a, b| b.rank.total_cmp(&a.rank).then(b.extent.total_cmp(&a.extent)));
+    out
+}
+
 struct Candidate {
     text: String,
     rank: f64,
-    /// Length or the square root of the area, mm: the tie-break, larger first.
-    extent: f64,
     shape: Shape,
     look: Look,
     /// The matching rule's `id`, when it has one.
@@ -640,49 +695,14 @@ pub fn place_avoiding(
     for (k, files) in &faces {
         cached_faces.insert(k.clone(), text::CachedGoogleFont::parse_all(files)?);
     }
-    let page = frame.unsigned_area().max(1.0);
-    let mut candidates = Vec::new();
-    // Roads come in pieces; one chain per name and class, so a street is one
-    // candidate however the data cut it.
-    let mut roads: BTreeMap<(String, String), (f64, Lines, Look, Option<String>)> = BTreeMap::new();
-    for f in features {
-        let Some(raw) = pick_feature_label(f, &style.keys) else {
-            continue;
-        };
-        let (look, rule) = style.look(f);
-        let name = if look.upper { raw.to_uppercase() } else { raw.to_string() };
-        let polys = geom::polygons(&f.geometry);
-        if let Some(poly) = polys.into_iter().max_by(|a, b| a.unsigned_area().total_cmp(&b.unsigned_area())) {
-            let area = poly.unsigned_area();
-            let rank = (0.25 + (area / page).sqrt()).min(1.0);
-            candidates.push(Candidate { text: name, rank, extent: area.sqrt(), shape: Shape::Area(poly), look, rule });
-        } else if let geo::Geometry::Point(p) = &f.geometry {
-            let rank = pin_rank(f);
-            candidates.push(Candidate { text: name, rank, extent: 1.0, shape: Shape::Pin(p.0), look, rule });
-        } else {
-            let class = f.tag("class").or_else(|| f.tag("highway")).unwrap_or("").to_string();
-            let entry = roads.entry((name, class)).or_insert_with(|| (road_rank(f), Vec::new(), look, rule));
-            entry.1.extend(geom::lines_of(&f.geometry));
-        }
-    }
-    for ((name, _), (rank, lines, look, rule)) in roads {
-        for chain in geom::linemerge(&lines) {
-            let pts: Vec<Coord<f64>> = chain.0;
-            if pts.len() < 2 {
-                continue;
-            }
-            let extent = Path::new(pts.clone()).length();
-            candidates.push(Candidate {
-                text: name.clone(),
-                rank,
-                extent,
-                shape: Shape::Road(pts),
-                look: look.clone(),
-                rule: rule.clone(),
-            });
-        }
-    }
-    candidates.sort_by(|a, b| b.rank.total_cmp(&a.rank).then(b.extent.total_cmp(&a.extent)));
+    let candidates: Vec<Candidate> = named(features, &style.keys, frame.unsigned_area())
+        .into_iter()
+        .map(|n| {
+            let (look, rule) = style.look(&features[n.feature]);
+            let text = if look.upper { n.text.to_uppercase() } else { n.text };
+            Candidate { text, rank: n.rank, shape: n.shape, look, rule }
+        })
+        .collect();
 
     let max_cap = candidates.iter().map(|c| c.look.size.0.max(c.look.min_size.0)).fold(style.size.0, f64::max);
     let mut taken = Taken::new(max_cap * 4.0);

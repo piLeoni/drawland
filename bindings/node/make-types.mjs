@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 const here = import.meta.dirname
 const dts = readFileSync(join(here, '../../crates/drawland-script/drawland.d.ts'), 'utf8')
-const names = ['features', 'areas', 'engine', 'page', 'world', 'lines', 'fills', 'burin', 'ink', 'modules', 'compose', 'draw', 'output', 'title', 'view']
+const names = ['features', 'areas', 'engine', 'page', 'world', 'lines', 'fills', 'burin', 'ink', 'modules', 'compose', 'draw', 'paint', 'output', 'title', 'view']
 const face = `
 /** The library, as a \`Graph\` built in Node carries it. */
 export interface Library {

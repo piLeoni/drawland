@@ -16,6 +16,7 @@ pub mod optimize;
 pub mod osm;
 pub mod osm_cache;
 pub mod output;
+pub mod paint;
 pub mod profile;
 pub mod progress;
 pub mod projection;

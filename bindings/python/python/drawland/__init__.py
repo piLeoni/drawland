@@ -122,7 +122,7 @@ class Graph:
     """A draw.land graph, built in Python: the same library a JavaScript
     profile calls (``features``, ``areas``, ``lines``, ``fills``, ``modules``,
     ``compose``, ``ink``, ``burin``, ``page``, ``world``, ``engine``, and
-    ``output``, ``title``, ``draw``, ``view``). Draw it with
+    ``output``, ``title``, ``draw``, ``paint``, ``view``). Draw it with
     ``drawland.draw(g)``.
 
     ``lat`` and ``lng`` are the place ``world`` answers for (over the one
@@ -178,6 +178,12 @@ class Graph:
         """Draw lines as a group, a pen: ``draw(id="roads", from_=roads.outlines,
         stroke={...})``. Its group id."""
         return self._call("draw", [spec] if spec is not None else [], kwargs)
+
+    def paint(self, spec=None, **kwargs):
+        """A layer of the screen, when the output is one (``output(screen={...})``):
+        ``paint(id="water", from_=water, fill={"chars": "~", "color": "#36c"})``.
+        Its id."""
+        return self._call("paint", [spec] if spec is not None else [], kwargs)
 
     def view(self, *args, **kwargs):
         """Another place drawn into a rectangle of the page:
