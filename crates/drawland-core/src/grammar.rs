@@ -2676,8 +2676,8 @@ compose:
              \x20 - {{ id: names, from: $features.f, text: {{ marker: \"*\" }} }}\n"
         ))
         .unwrap();
-        // The screen's size in mm follows from its cells, two by four dots each.
-        assert!((g.output.width.0 - 80.0 * 2.0 * crate::paint::PIXEL_MM).abs() < 1e-9);
+        // The screen's size is counted in characters, a row two of them tall.
+        assert_eq!((g.output.width.0, g.output.height.0), (80.0, 48.0));
         assert_eq!(g.paint.len(), 3);
         assert_eq!(g.paint[1].halo, crate::paint::Halo(1, 0));
         // Back through JSON, the same graph.

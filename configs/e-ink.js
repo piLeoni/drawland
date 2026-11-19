@@ -13,7 +13,7 @@ title("E-ink")
 output({
   lat: 45.4375,
   lng: 12.3358,
-  scale: "1:12000",
+  scale: "3m", // the ground one pixel spans
   projection: "webmercator",
   screen: { kind: "bitmap", width: 800, height: 480 },
 })

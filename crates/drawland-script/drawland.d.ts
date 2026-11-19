@@ -556,8 +556,12 @@ interface OutputOptions {
   /** The paper. Default 6in × 4in. */
   width?: Length
   height?: Length
-  /** `"1:10000"`, or the denominator. */
-  scale?: `1:${number}` | number
+  /**
+   * `"1:10000"`, or the denominator: the ground one unit of the output
+   * spans, in mm. On a screen, write that ground as a length: `"3m"`, three
+   * metres a pixel (or a character).
+   */
+  scale?: `1:${number}` | `${number}m` | `${number}cm` | number
   /** Degrees clockwise. */
   bearing?: number
   /** `"webmercator"` (the web map, north up), `"utm"` (true distances), or a PROJ string with `{lat}` and `{lng}`. */
@@ -590,9 +594,12 @@ interface OutputOptions {
   /**
    * A screen instead of paper: a 1-bit bitmap (`"bitmap"`, `width` × `height`
    * pixels: e-ink, OLED and other black-and-white displays) or a terminal's
-   * character cells (`"text"`, `width` columns × `height` rows). The size in
-   * mm follows from it (a pixel is 1/96 in; a cell is 2 × 4 of them), so
-   * leave out `width`, `height`, `padding` and `slices`. A screen is covered
+   * character cells (`"text"`, `width` columns × `height` rows). The screen's
+   * pixels or characters are then the output's unit in place of the mm: every
+   * length (a buffer, an offset, `page.width`) counts them, and `scale` is
+   * the ground one spans (`"3m"`). A character is one unit across and two
+   * down, a row being as tall as two characters are wide. Leave out `width`,
+   * `height`, `padding` and `slices`. A screen is covered
    * by `paint` entries, not `draw` ones; the command line writes it as
    * `.png`/`.pbm` or `.txt`/`.ans`/`.html`.
    */
@@ -945,8 +952,10 @@ declare const page: {
  */
 declare const world: {
   /**
-   * The scale denominator (`10000` for `"1:10000"`), to size things on the
-   * ground: `metres * 1000 / world.scale` is millimetres on paper.
+   * The ground one unit of the output spans, in mm (`10000` for
+   * `"1:10000"`, `3000` for `"3m"`), to size things on the ground:
+   * `metres * 1000 / world.scale` is millimetres on paper, pixels or
+   * characters on a screen.
    */
   readonly scale: number
   /** Degrees clockwise. */

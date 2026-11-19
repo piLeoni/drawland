@@ -8,18 +8,19 @@ The same graph, painted on a grid instead of drawn on paper: a 1-bit **bitmap** 
 
 | File | Role |
 |------|------|
-| `drawland-core/src/paint.rs` | The spec: `Screen` (`kind`, `width`, `height`, `invert`), `PIXEL_MM`, `CELL_DOTS`, `Paint` and its `Look` (`FillPaint`, `LinePaint`, `TextPaint`), `Halo`, `Tile`, `Marker`, `Rgb`, the pattern and font names |
-| `drawland-core/src/profile.rs` | `OutputSpec::screen`, `OutputSpec::fit_screen` (the size in mm from the screen's) |
+| `drawland-core/src/paint.rs` | The spec: `Screen` (`kind`, `width`, `height`, `invert`; `cell`, `dot`, `size` in the output's units), `CELL_DOTS`, `Paint` and its `Look` (`FillPaint`, `LinePaint`, `TextPaint`), `Halo`, `Tile`, `Marker`, `Rgb`, the pattern and font names |
+| `drawland-core/src/profile.rs` | `OutputSpec::screen`, `OutputSpec::fit_screen` (the output's size in the screen's units) |
 | `drawland-core/src/grammar.rs` | `Grammar::paint`, its JSON (`paint: [{ id, from, fill | line | text, halo }]`), `validate_paint` |
 | `drawland-core/src/grammar_run.rs` | `grammar_run::paint` → `Vec<Painted>`: the graph evaluated as usual (`Want::Paint`), each entry handed its area, lines or names |
 | `drawland-core/src/labels.rs` | `labels::named`: the names of features before any font (text, rank, road chains), shared with the pen's labels |
 | `drawland-grid/` | The painter: `raster.rs` (scanline areas, Bresenham lines, cell walks, halo growth), `pattern.rs` (8×8 patterns, Bayer tone), `font.rs` (Spleen PSF fonts, built in), `place.rs` (names on the grid), `bitmap.rs`, `text.rs`, `lib.rs` (`render`, `origin`, `Picture`, `Format`) |
 | `drawland/src/lib.rs` | `Drawer::paint` / `paint_graph`, `Drawer::make` (paper or screen, as the output says), `Painting::save` |
-| `drawland/src/view.rs` | `drawland view`: the map in the terminal, moved with the keys |
+| `drawland/src/view.rs` | `drawland view`: the map in the terminal, moved with the keys; `open` (a screen profile and its place), shared with `serve` |
+| `drawland/src/serve.rs`, `serve.html` | `drawland serve`: the map in a web page on this machine |
 
 ## Units
 
-A screen's size in mm follows from its grid, so every op (buffers, `page.width`, label padding) still works in mm: a pixel is `PIXEL_MM` (1/96 in, a CSS pixel), a text cell is `CELL_DOTS` (2 × 4) of them — a Braille character's dots, a cell twice as tall as wide. `fit_screen` writes the size into `width` and `height`; `output()` refuses `width`, `height`, `padding` and `slices` beside a `screen`. A text screen is painted on its dot grid (`2w × 4h`) where it needs sub-cell detail (Braille, quarter blocks) and on its cells otherwise.
+On a screen the output's unit is the screen's own, not the millimetre: a **pixel** on a bitmap, a **character** on text. Every length a profile writes (a buffer, an offset, `page.width`, a shape's points) counts them, and `scale` is the ground one of them spans: `scale: "3m"` is three metres a pixel (or a character). Inside, the scale stays what it is on paper, the ground a unit spans in mm (`"1:10000"` is a millimetre spanning 10 m, `"3m"` a unit spanning 3 m, both `Scale(10000.0)`/`Scale(3000.0)`), so `Output`, `Frame` and every op read it unchanged; `world.scale` is that number. A character is one unit across and two down (a row is as tall as two characters are wide), so geometry stays square and a circle stays round on the screen; a dot (`CELL_DOTS`, 2 × 4 a character, a Braille character's grid) is half a unit. `fit_screen` writes the size (`width` pixels or columns, `height` pixels or twice the rows) into `width` and `height`; `output()` refuses `width`, `height`, `padding` and `slices` beside a `screen`. A text screen is painted on its dot grid (`2w × 4h`) where it needs sub-cell detail (Braille, quarter blocks) and on its cells otherwise. A length written with a unit (`"2mm"`) still reads as that many mm and so as that many units; write bare numbers on a screen.
 
 ## Painting
 
@@ -38,6 +39,7 @@ Patterns, tones and tiled characters are read at the dot's place in the **world*
 
 - `drawland map <profile>` writes a screen by the extension of `-o` (`.png`/`.pbm` bitmap, `.txt`/`.ans`/`.html` text, `.png` a picture of text cells; a bitmap written as text is drawn in Braille); `-o -` prints it to the terminal. Unset: `map.png` or `map.ans`.
 - `drawland view <profile>` (unix): raw mode on the alternate screen, the screen sized to the terminal (a bitmap in Braille, 2 × 4 pixels a cell); arrows / `hjkl` move a quarter screen (`Frame::to_world`), `+`/`-` halve or double the scale, `r` repaints, `q` quits. Keys pressed while a paint runs are gathered into one move. It changes the graph's output between paints; the script is not run again, so a script that reads `world` sees the first place.
+- `drawland serve <profile> [--port 8700]` (any platform): the map in a web page at `http://localhost:<port>/`, one profile a port, so a bitmap and a text site run side by side as the separate sites they will be. The page (`serve.html`, built into the binary) asks for one screen at a time, `/paint?lat&lng&scale&w&h`: a PNG for a bitmap, the cells of a `<pre>` (`Text::html_rows`) for text. Drag, arrows / `hjkl` and the wheel or `+`/`-` move it; the picture is moved at once and painted again when let go. A bitmap pixel is ×1–×8 **device** pixels (×2 by default on a retina screen: a pixel a CSS pixel, `image-rendering: pixelated`); text has a font size. `size` is the window's or the profile's own `width × height`. The place and scale are kept in the address (`#lat,lng,scale`). Moving assumes web Mercator, north up.
 - Python and Node draw paper only for now (`Drawer::draw` refuses a screen); their faces have `paint`.
 - The web page does not paint screens yet. `drawland-grid` does no I/O and builds for WASM as it is; `Text::cell(x, y)` gives a page each cell's character and colours.
 

@@ -310,10 +310,17 @@ box drawing joined where lines cross, or ASCII; names are written in a pixel
 font (Spleen, four sizes) or a letter a cell, none over another. Patterns are
 fixed to the ground, so they stay put when the map moves.
 
+On a screen every length counts pixels or characters, not millimetres: a
+buffer of 2 is two pixels, `page.width` is the screen's width, and the scale
+is the ground one of them spans, `scale: "3m"`. A character is one unit
+across and two down.
+
 ```bash
 drawland map configs/e-ink.js -o venice.png        # a 1-bit PNG (or .pbm)
 drawland map configs/terminal.js -o -              # straight to the terminal (or .ans, .txt, .html, .png)
 drawland view configs/terminal.js --address "Rialto, Venezia"   # arrows move, + and - zoom, q quits
+drawland serve configs/e-ink.js --port 8701        # the map in a web page: drag, wheel, pixel ×1–×8
+drawland serve configs/terminal.js --port 8702     # the same for text cells, side by side
 ```
 
 | `configs/e-ink.js` (800 × 480) | `configs/terminal.js` (120 × 44 cells) |

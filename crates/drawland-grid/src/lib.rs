@@ -26,7 +26,7 @@ pub use text::Text;
 
 use drawland_core::grammar_run::{PaintShape, Painted};
 use drawland_core::output::Output;
-use drawland_core::paint::{Look, Screen, ScreenKind, PIXEL_MM};
+use drawland_core::paint::{Look, Screen, ScreenKind};
 use drawland_core::profile::ProjectionMode;
 
 /// A painted screen.
@@ -122,8 +122,9 @@ pub fn origin(output: &Output, screen: &Screen) -> (i64, i64) {
     let lat = lat.clamp(-85.05, 85.05);
     let x = R * lon.to_radians();
     let y = R * (std::f64::consts::FRAC_PI_4 + lat.to_radians() / 2.0).tan().ln();
-    // Mercator metres a dot: the page is scaled to its centre's latitude.
-    let per_dot = PIXEL_MM / 1000.0 * output.scale / lat.to_radians().cos();
+    // Mercator metres a dot: the scale is the ground a unit spans (in mm),
+    // true at the centre's latitude.
+    let per_dot = screen.dot() * output.scale / 1000.0 / lat.to_radians().cos();
     let (w, h) = screen.dots();
     ((x / per_dot).round() as i64 - w as i64 / 2, (-y / per_dot).round() as i64 - h as i64 / 2)
 }
@@ -131,7 +132,7 @@ pub fn origin(output: &Output, screen: &Screen) -> (i64, i64) {
 /// The layers, bottom first, painted on `screen`; `origin` from [`origin`].
 pub fn render(screen: &Screen, origin: (i64, i64), layers: &[Painted]) -> Picture {
     let cells = screen.kind == ScreenKind::Text;
-    let unit_mm = screen.unit_mm();
+    let unit = screen.cell();
     let size = (screen.width as i64, screen.height as i64);
     let texts: Vec<place::Layer> = layers
         .iter()
@@ -144,7 +145,7 @@ pub fn render(screen: &Screen, origin: (i64, i64), layers: &[Painted]) -> Pictur
                     let f = font::font(&t.font)?;
                     (f.width as i64, f.height as i64)
                 };
-                Some(place::Layer { index, paint: t, names, metrics: place::Metrics { letter, unit_mm, size } })
+                Some(place::Layer { index, paint: t, names, metrics: place::Metrics { letter, unit, size } })
             }
             _ => None,
         })

@@ -98,6 +98,26 @@ enum Command {
         #[arg(long)]
         offline: bool,
     },
+    /// Show a screen profile's map in a web page on this machine: drag,
+    /// arrows and the wheel move it; a bitmap's pixels can be made bigger
+    /// for a sharp screen. One profile a port: run one for each.
+    Serve {
+        /// A profile whose output is a screen (`output({ screen: … })`).
+        profile: PathBuf,
+        #[arg(long, default_value_t = 8700)]
+        port: u16,
+        /// Street address, looked up with Nominatim. Overrides the profile.
+        #[arg(long, conflicts_with_all = ["lat", "lng"])]
+        address: Option<String>,
+        #[arg(long, requires = "lng", allow_hyphen_values = true)]
+        lat: Option<f64>,
+        #[arg(long, requires = "lat", allow_hyphen_values = true)]
+        lng: Option<f64>,
+        #[arg(long, default_value = "cache")]
+        cache: PathBuf,
+        #[arg(long)]
+        offline: bool,
+    },
 }
 
 /// The profile named on the command line: a file, or the built-in postcard.
@@ -128,6 +148,17 @@ where
         Command::View { profile, address, lat, lng, cache, offline } => {
             let drawer = Drawer::new(Settings { cache, offline, refresh: false });
             let result = profile_at(&profile).and_then(|p| crate::view::run(&drawer, &p, &Place { address, lat, lng }));
+            return match result {
+                Ok(()) => 0,
+                Err(e) => {
+                    eprintln!("{}: {e}", profile.display());
+                    1
+                }
+            };
+        }
+        Command::Serve { profile, port, address, lat, lng, cache, offline } => {
+            let drawer = Drawer::new(Settings { cache, offline, refresh: false });
+            let result = profile_at(&profile).and_then(|p| crate::serve::run(&drawer, &p, &Place { address, lat, lng }, port));
             return match result {
                 Ok(()) => 0,
                 Err(e) => {

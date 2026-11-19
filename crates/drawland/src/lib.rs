@@ -20,6 +20,7 @@ pub mod cli;
 mod fonts;
 mod http;
 mod term;
+mod serve;
 mod view;
 
 pub use drawland_core;

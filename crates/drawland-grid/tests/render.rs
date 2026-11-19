@@ -11,9 +11,9 @@ fn screen(kind: ScreenKind, width: u32, height: u32) -> Screen {
     Screen { kind, width, height, invert: false }
 }
 
-/// The whole screen as an area, in mm.
+/// The whole screen as an area, in its units.
 fn page(s: &Screen) -> MultiPolygon<f64> {
-    let (w, h) = s.size_mm();
+    let (w, h) = s.size();
     MultiPolygon::new(vec![Polygon::new(LineString::from(vec![(0.0, 0.0), (w, 0.0), (w, h), (0.0, h), (0.0, 0.0)]), vec![])])
 }
 
@@ -28,7 +28,7 @@ fn text(p: &Picture) -> String {
 #[test]
 fn a_text_screen_tiles_lines_and_names() {
     let s = screen(ScreenKind::Text, 24, 6);
-    let (cw, ch) = s.unit_mm();
+    let (cw, ch) = s.cell();
     let row = |r: f64| (r + 0.5) * ch;
     let road = LineString::from(vec![(0.0, row(3.0)), (24.0 * cw, row(3.0))]);
     let water = FillPaint { chars: Some(Tile(vec!["~.".chars().collect()])), ..FillPaint::default() };
@@ -50,7 +50,7 @@ fn a_text_screen_tiles_lines_and_names() {
 #[test]
 fn box_lines_that_cross_are_joined() {
     let s = screen(ScreenKind::Text, 9, 5);
-    let (cw, ch) = s.unit_mm();
+    let (cw, ch) = s.cell();
     let across = LineString::from(vec![(0.0, 2.5 * ch), (9.0 * cw, 2.5 * ch)]);
     let down = LineString::from(vec![(4.5 * cw, 0.0), (4.5 * cw, 5.0 * ch)]);
     let box_line = Look::Line(LinePaint { style: LineStyle::Box, ..LinePaint::default() });
@@ -63,7 +63,7 @@ fn box_lines_that_cross_are_joined() {
 #[test]
 fn a_bitmap_halo_is_the_other_ink() {
     let s = screen(ScreenKind::Bitmap, 32, 16);
-    let px = PIXEL_MM;
+    let px = 1.0;
     let line = LineString::from(vec![(0.0, 8.5 * px), (32.0 * px, 8.5 * px)]);
     let layers = vec![
         layer("ground", Look::Fill(FillPaint { pattern: Some("solid".into()), ..FillPaint::default() }), PaintShape::Area(page(&s)), 0),

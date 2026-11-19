@@ -9,7 +9,11 @@ use crate::pattern::{tone_at, Pattern};
 use crate::place::{letter_at, Placed};
 use crate::raster::{area_mask, cell_walk, clip, line_dots, Mask, ToDots};
 use drawland_core::grammar_run::{PaintShape, Painted};
-use drawland_core::paint::{FillPaint, LinePaint, LineStyle, Look, Marker, Rgb, CELL_DOTS, PIXEL_MM};
+use drawland_core::paint::{FillPaint, LinePaint, LineStyle, Look, Marker, Rgb, CELL_DOTS};
+
+/// A character in the output's units, across and down; a dot is half of one.
+const CELL: (f64, f64) = (1.0, 2.0);
+const DOT: f64 = 1.0 / CELL_DOTS.0 as f64;
 use std::fmt::Write;
 
 /// What a cell holds, before it is a character: Braille dots and box
@@ -219,6 +223,15 @@ impl Text {
             "<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{}</title>\n<style>\nbody {{ margin: 0; background: #0c0c0c; }}\npre {{ margin: 0; padding: 16px; color: #cccccc; background: #0c0c0c; font: 14px/1 ui-monospace, Menlo, \"DejaVu Sans Mono\", Consolas, monospace; letter-spacing: 0; }}\n</style></head><body><pre>",
             escape(title)
         );
+        out.push_str(&self.html_rows());
+        out.push_str("</pre></body></html>\n");
+        out
+    }
+
+    /// The cells as the inside of an HTML `<pre>`: a line a row, each run of
+    /// one colour a `<span>`.
+    pub fn html_rows(&self) -> String {
+        let mut out = String::new();
         for y in 0..self.height {
             let mut x = 0;
             while x < self.width {
@@ -243,7 +256,6 @@ impl Text {
             }
             out.push('\n');
         }
-        out.push_str("</pre></body></html>\n");
         out
     }
 }
@@ -257,7 +269,7 @@ fn escape(s: &str) -> String {
 /// read).
 pub fn paint(layers: &[Painted], placed: &Placed, w: usize, h: usize, origin: (i64, i64)) -> Text {
     let (dx, dy) = (CELL_DOTS.0 as usize, CELL_DOTS.1 as usize);
-    let dots = ToDots { mm_per_dot: PIXEL_MM };
+    let dots = ToDots { per_dot: DOT };
     let mut text = Text::new(w, h);
     for (i, layer) in layers.iter().enumerate() {
         match (&layer.look, &layer.shape) {
@@ -438,7 +450,7 @@ const SLANT: f64 = 20.0;
 
 /// Lines in cell units, cut to the grid with a cell to spare.
 fn cell_segments(lines: &[geo::LineString<f64>], w: usize, h: usize) -> Vec<Vec<((f64, f64), (f64, f64))>> {
-    let (ux, uy) = (PIXEL_MM * CELL_DOTS.0 as f64, PIXEL_MM * CELL_DOTS.1 as f64);
+    let (ux, uy) = CELL;
     let (lo, hi) = ((-1.0, -1.0), (w as f64 + 1.0, h as f64 + 1.0));
     lines
         .iter()
@@ -454,7 +466,7 @@ fn cell_segments(lines: &[geo::LineString<f64>], w: usize, h: usize) -> Vec<Vec<
 fn line_cells(lines: &[geo::LineString<f64>], l: &LinePaint, w: usize, h: usize) -> Mask {
     let mut cells = Mask::new(w, h);
     if l.style == LineStyle::Braille && l.char.is_none() {
-        let dots = ToDots { mm_per_dot: PIXEL_MM };
+        let dots = ToDots { per_dot: DOT };
         for line in lines {
             for run in line_dots(line, dots, w * CELL_DOTS.0 as usize, h * CELL_DOTS.1 as usize) {
                 for (x, y) in run {
@@ -489,7 +501,7 @@ fn line(text: &mut Text, lines: &[geo::LineString<f64>], l: &LinePaint, w: usize
     }
     match l.style {
         LineStyle::Braille => {
-            let dots = ToDots { mm_per_dot: PIXEL_MM };
+            let dots = ToDots { per_dot: DOT };
             for line in lines {
                 for run in line_dots(line, dots, w * CELL_DOTS.0 as usize, h * CELL_DOTS.1 as usize) {
                     for (x, y) in run {
@@ -502,7 +514,7 @@ fn line(text: &mut Text, lines: &[geo::LineString<f64>], l: &LinePaint, w: usize
             }
         }
         LineStyle::Ascii => {
-            let (ux, uy) = (PIXEL_MM * CELL_DOTS.0 as f64, PIXEL_MM * CELL_DOTS.1 as f64);
+            let (ux, uy) = CELL;
             let mut strokes: std::collections::HashMap<(i64, i64), u8> = Default::default();
             for segments in cell_segments(lines, w, h) {
                 for (a, b) in segments {
@@ -535,7 +547,7 @@ fn line(text: &mut Text, lines: &[geo::LineString<f64>], l: &LinePaint, w: usize
             // Box drawing: each cell keeps the sides its line leaves it by.
             // A stretch running neither across nor down would be a
             // staircase of corners; it is drawn in Braille dots instead.
-            let (ux, uy) = (PIXEL_MM * CELL_DOTS.0 as f64, PIXEL_MM * CELL_DOTS.1 as f64);
+            let (ux, uy) = CELL;
             let mut sides: std::collections::HashMap<(i64, i64), u8> = Default::default();
             let mut slanted: Vec<geo::LineString<f64>> = Vec::new();
             for segments in cell_segments(lines, w, h) {
@@ -591,7 +603,7 @@ fn line(text: &mut Text, lines: &[geo::LineString<f64>], l: &LinePaint, w: usize
                     paint_bg(cell);
                 }
             }
-            let dots = ToDots { mm_per_dot: PIXEL_MM };
+            let dots = ToDots { per_dot: DOT };
             for line in &slanted {
                 for run in line_dots(line, dots, w * CELL_DOTS.0 as usize, h * CELL_DOTS.1 as usize) {
                     for (x, y) in run {

@@ -5,7 +5,8 @@
 
 use crate::{Drawer, Place, Profile};
 use drawland_core::frame::Frame;
-use drawland_core::paint::{ScreenKind, CELL_DOTS};
+use drawland_core::grammar::Grammar;
+use drawland_core::paint::{Screen, ScreenKind, CELL_DOTS};
 
 /// What the keys ask, gathered while the last paint was under way.
 #[derive(Default)]
@@ -17,12 +18,14 @@ struct Moves {
     again: bool,
 }
 
-pub fn run(drawer: &Drawer, profile: &Profile, place: &Place) -> Result<(), String> {
-    let mut grammar = drawer.graph(profile, place, &())?;
+/// A screen profile's graph and screen, and the place it opens on
+/// `(lng, lat)`: the command line's, else the profile's.
+pub(crate) fn open(drawer: &Drawer, profile: &Profile, place: &Place, command: &str) -> Result<(Grammar, Screen, (f64, f64)), String> {
+    let grammar = drawer.graph(profile, place, &())?;
     let Some(screen) = grammar.output.screen else {
-        return Err("drawland view shows a screen: give the profile's output one, output({ screen: { kind: \"text\", width, height } })".into());
+        return Err(format!("drawland {command} shows a screen: give the profile's output one, output({{ screen: {{ kind: \"text\", width, height }} }})"));
     };
-    let (mut lng, mut lat) = match (place.lat, place.lng, &place.address, grammar.output.lat, grammar.output.lng, &grammar.output.address) {
+    let at = match (place.lat, place.lng, &place.address, grammar.output.lat, grammar.output.lng, &grammar.output.address) {
         (Some(lat), Some(lng), ..) => (lng, lat),
         (_, _, Some(a), ..) => {
             let (lat, lng) = drawer.geocode(a)?;
@@ -35,6 +38,11 @@ pub fn run(drawer: &Drawer, profile: &Profile, place: &Place) -> Result<(), Stri
         }
         _ => return Err("no place: give --address or --lat and --lng".into()),
     };
+    Ok((grammar, screen, at))
+}
+
+pub fn run(drawer: &Drawer, profile: &Profile, place: &Place) -> Result<(), String> {
+    let (mut grammar, screen, (mut lng, mut lat)) = open(drawer, profile, place, "view")?;
     let term = terminal::Raw::enter()?;
     loop {
         let (cols, rows) = terminal::size();
@@ -46,12 +54,12 @@ pub fn run(drawer: &Drawer, profile: &Profile, place: &Place) -> Result<(), Stri
         };
         grammar.output.screen = Some(s);
         grammar.output.fit_screen()?;
-        let scale = grammar.output.scale.0;
-        term.status(&format!("painting {lat:.5}, {lng:.5} · 1:{scale:.0} …"), rows);
+        let scale = ground(grammar.output.scale.0, s.kind);
+        term.status(&format!("painting {lat:.5}, {lng:.5} · {scale} …"), rows);
         let status = match drawer.paint_graph(&grammar, &Place::at(lat, lng), profile.dir(), &()) {
             Ok(p) => {
                 term.frame(&p.picture.ansi());
-                format!(" {lat:.5}, {lng:.5} · 1:{scale:.0} · arrows move · + − zoom · q quits")
+                format!(" {lat:.5}, {lng:.5} · {scale} · arrows move · + − zoom · q quits")
             }
             Err(e) => format!(" {e}"),
         };
@@ -72,8 +80,22 @@ pub fn run(drawer: &Drawer, profile: &Profile, place: &Place) -> Result<(), Stri
         }
         if moves.zoom != 0 {
             let s = grammar.output.scale.0 * 2f64.powi(-moves.zoom);
-            grammar.output.scale.0 = s.clamp(250.0, 100_000_000.0);
+            // From ten centimetres a unit to a hundred kilometres.
+            grammar.output.scale.0 = s.clamp(100.0, 100_000_000.0);
         }
+    }
+}
+
+/// The ground a pixel or a character spans, from the scale (mm a unit).
+fn ground(scale: f64, kind: ScreenKind) -> String {
+    let unit = match kind {
+        ScreenKind::Bitmap => "pixel",
+        ScreenKind::Text => "character",
+    };
+    match scale / 1000.0 {
+        m if m >= 1000.0 => format!("{:.1} km a {unit}", m / 1000.0),
+        m if m >= 10.0 => format!("{m:.0} m a {unit}"),
+        m => format!("{m:.1} m a {unit}"),
     }
 }
 

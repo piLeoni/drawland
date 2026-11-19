@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>draw.land</title>
+<style>
+  :root {
+    --bg: #0c0c0c; --fg: #cfcfcf; --dim: #7a7a7a; --bar: #141414; --line: #262626; --accent: #e2c15a;
+    --mono: ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", Consolas, monospace;
+  }
+  body.bitmap { --bg: #d9d7d0; --fg: #111; --dim: #6b6a65; --bar: #ecebe6; --line: #c9c7bf; --accent: #111; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 12px/1.4 var(--mono); }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 8px 16px; background: var(--bar); border-bottom: 1px solid var(--line); user-select: none; }
+  header h1 { font-size: 12px; margin: 0; font-weight: 600; letter-spacing: .04em; }
+  header .group { display: flex; align-items: center; gap: 4px; }
+  header .label { color: var(--dim); margin-right: 2px; }
+  header .status { color: var(--dim); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  button { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 3px; padding: 1px 7px; cursor: pointer; }
+  button:hover { border-color: var(--dim); }
+  button[aria-pressed="true"] { background: var(--fg); color: var(--bar); border-color: var(--fg); }
+  main { flex: 1; position: relative; overflow: hidden; cursor: grab; touch-action: none; }
+  main.dragging { cursor: grabbing; }
+  #view { position: absolute; left: 0; top: 0; will-change: transform; }
+  #view img { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+  #view pre { margin: 0; white-space: pre; color: #cccccc; background: #0c0c0c; font-family: var(--mono); line-height: 1; letter-spacing: 0; }
+  body.bitmap #view { box-shadow: 0 1px 6px rgba(0,0,0,.25); }
+  #probe { position: absolute; visibility: hidden; white-space: pre; font-family: var(--mono); line-height: 1; }
+  .busy::after { content: " ·"; animation: blink 0.8s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (max-width: 600px) { header { padding: 8px 16px; } header .status { margin-left: 0; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <div class="group" id="sizes"></div>
+  <div class="group" id="fit"><span class="label">size</span><button data-fit="window">window</button><button data-fit="screen"></button></div>
+  <div class="group"><span class="label">zoom</span><button data-zoom="1">+</button><button data-zoom="-1">−</button></div>
+  <div class="status" id="status"></div>
+</header>
+<main id="main"><div id="view"></div><span id="probe"></span></main>
+<script>
+const START = /*START*/null
+const R = 6378137
+const main = document.getElementById("main"), view = document.getElementById("view"), statusEl = document.getElementById("status")
+const bitmap = START.kind === "bitmap"
+document.body.classList.add(START.kind)
+document.getElementById("title").textContent = START.title
+document.querySelector('[data-fit="screen"]').textContent = `${START.width}×${START.height}`
+
+const saved = (k, d) => { try { const v = localStorage.getItem(`drawland.${START.kind}.${k}`); return v === null ? d : JSON.parse(v) } catch { return d } }
+const save = (k, v) => { try { localStorage.setItem(`drawland.${START.kind}.${k}`, JSON.stringify(v)) } catch {} }
+
+// Where and how near: from the address bar (#lat,lng,scale), else the profile.
+const state = { lat: START.lat, lng: START.lng, scale: START.scale }
+const fromHash = location.hash.slice(1).split(",").map(Number)
+if (fromHash.length === 3 && fromHash.every(Number.isFinite)) [state.lat, state.lng, state.scale] = fromHash
+// A bitmap pixel is `size` device pixels; a text cell is `size` CSS px of font.
+let size = saved("size", bitmap ? Math.max(1, Math.round(devicePixelRatio)) : 14)
+let fit = saved("fit", "window")
+const SIZES = bitmap ? [1, 2, 3, 4, 6, 8] : [10, 12, 14, 16, 20, 24]
+
+const sizes = document.getElementById("sizes")
+sizes.innerHTML = `<span class="label">${bitmap ? "pixel" : "font"}</span>` +
+  SIZES.map(s => `<button data-size="${s}" title="${bitmap ? `a pixel is ${s} device pixel${s > 1 ? "s" : ""}` : `${s}px`}">${bitmap ? "×" + s : s}</button>`).join("")
+
+function pressed() {
+  for (const b of sizes.querySelectorAll("button")) b.setAttribute("aria-pressed", String(+b.dataset.size === size))
+  for (const b of document.querySelectorAll("[data-fit]")) b.setAttribute("aria-pressed", String(b.dataset.fit === fit))
+}
+
+// A text cell's size in CSS px at this font size.
+function cell() {
+  const probe = document.getElementById("probe")
+  probe.style.fontSize = size + "px"
+  probe.textContent = "M".repeat(100)
+  const r = probe.getBoundingClientRect()
+  return { w: r.width / 100, h: r.height }
+}
+
+// The grid the window holds (or the profile's), and how big a unit is on the page.
+function grid() {
+  const box = main.getBoundingClientRect()
+  if (bitmap) {
+    const css = size / devicePixelRatio // CSS px a bitmap pixel
+    const w = fit === "screen" ? START.width : Math.max(8, Math.floor(box.width / css))
+    const h = fit === "screen" ? START.height : Math.max(8, Math.floor(box.height / css))
+    return { w, h, ux: css, uy: css, cssW: w * css, cssH: h * css, box }
+  }
+  const c = cell()
+  const w = fit === "screen" ? START.width : Math.max(4, Math.floor(box.width / c.w))
+  const h = fit === "screen" ? START.height : Math.max(2, Math.floor(box.height / c.h))
+  // A character is one unit across and two down.
+  return { w, h, ux: c.w, uy: c.h / 2, cssW: w * c.w, cssH: h * c.h, box }
+}
+
+// Web Mercator: the page is scaled at its centre, so a unit spans
+// scale / 1000 metres of ground there, more Mercator metres away from the equator.
+const mercator = (lat, lng) => [R * lng * Math.PI / 180, R * Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360))]
+const geographic = (x, y) => [(2 * Math.atan(Math.exp(y / R)) - Math.PI / 2) * 180 / Math.PI, x / R * 180 / Math.PI]
+function move(dxCss, dyCss) {
+  const g = grid()
+  const per = state.scale / 1000 / Math.cos(state.lat * Math.PI / 180)
+  const [x, y] = mercator(state.lat, state.lng)
+  let [lat, lng] = geographic(x - dxCss / g.ux * per, y + dyCss / g.uy * per)
+  state.lat = Math.max(-85, Math.min(85, lat))
+  state.lng = ((lng + 540) % 360) - 180
+}
+
+function ground() {
+  const m = state.scale / 1000, unit = bitmap ? "pixel" : "character"
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km a ${unit}` : m >= 10 ? `${m.toFixed(0)} m a ${unit}` : `${m.toFixed(1)} m a ${unit}`
+}
+
+// One paint at a time; whatever was asked meanwhile is painted next.
+let busy = false, again = false, shown = null
+async function paint() {
+  if (busy) { again = true; return }
+  busy = true
+  const g = grid(), at = { ...state }
+  history.replaceState(null, "", `#${at.lat.toFixed(5)},${at.lng.toFixed(5)},${Math.round(at.scale)}`)
+  statusEl.textContent = `${at.lat.toFixed(5)}, ${at.lng.toFixed(5)} · ${ground()} · ${g.w}×${g.h}`
+  statusEl.classList.add("busy")
+  const t0 = performance.now()
+  const url = `/paint?lat=${at.lat}&lng=${at.lng}&scale=${at.scale}&w=${g.w}&h=${g.h}`
+  try {
+    const r = await fetch(url)
+    if (!r.ok) throw new Error(await r.text())
+    if (bitmap) {
+      const blob = await r.blob()
+      const img = new Image()
+      img.src = URL.createObjectURL(blob)
+      await img.decode()
+      img.style.width = g.cssW + "px"
+      img.style.height = g.cssH + "px"
+      view.replaceChildren(img)
+    } else {
+      const pre = document.createElement("pre")
+      pre.style.fontSize = size + "px"
+      pre.innerHTML = await r.text()
+      view.replaceChildren(pre)
+    }
+    shown = { ...at, g }
+    place()
+    statusEl.textContent = `${at.lat.toFixed(5)}, ${at.lng.toFixed(5)} · ${ground()} · ${g.w}×${g.h} · ${Math.round(performance.now() - t0)} ms`
+  } catch (e) {
+    statusEl.textContent = String(e.message || e)
+  }
+  statusEl.classList.remove("busy")
+  busy = false
+  if (again) { again = false; paint() }
+}
+
+// The shown screen, centred, shifted by how far the map moved since it was painted.
+function place() {
+  if (!shown) return
+  const g = grid()
+  let dx = 0, dy = 0
+  if (shown.scale === state.scale) {
+    const per = state.scale / 1000 / Math.cos(shown.lat * Math.PI / 180)
+    const [x0, y0] = mercator(shown.lat, shown.lng), [x1, y1] = mercator(state.lat, state.lng)
+    dx = -(x1 - x0) / per * shown.g.ux
+    dy = (y1 - y0) / per * shown.g.uy
+  }
+  const left = Math.round((g.box.width - shown.g.cssW) / 2 + dx), top = Math.round((g.box.height - shown.g.cssH) / 2 + dy)
+  const k = shown.scale / state.scale
+  view.style.transformOrigin = `${shown.g.cssW / 2}px ${shown.g.cssH / 2}px`
+  view.style.transform = `translate(${left}px, ${top}px) scale(${k})`
+}
+
+// Dragging moves the picture now and paints when let go.
+let drag = null
+main.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY }; main.setPointerCapture(e.pointerId); main.classList.add("dragging") })
+main.addEventListener("pointermove", e => {
+  if (!drag) return
+  move(e.clientX - drag.x, e.clientY - drag.y)
+  drag = { x: e.clientX, y: e.clientY }
+  place()
+})
+main.addEventListener("pointerup", () => { if (drag) { drag = null; main.classList.remove("dragging"); paint() } })
+
+function zoom(steps) {
+  state.scale = Math.max(100, Math.min(1e8, state.scale * Math.pow(2, -steps)))
+  place()
+  paint()
+}
+let wheel = 0, wheelTimer = 0
+main.addEventListener("wheel", e => {
+  e.preventDefault()
+  wheel += e.deltaY
+  clearTimeout(wheelTimer)
+  wheelTimer = setTimeout(() => { const s = Math.round(-wheel / 100) || -Math.sign(wheel); wheel = 0; zoom(s) }, 120)
+}, { passive: false })
+
+addEventListener("keydown", e => {
+  const g = grid(), step = { x: g.box.width / 4, y: g.box.height / 4 }
+  const moves = { ArrowLeft: [1, 0], h: [1, 0], a: [1, 0], ArrowRight: [-1, 0], l: [-1, 0], d: [-1, 0], ArrowUp: [0, 1], k: [0, 1], w: [0, 1], ArrowDown: [0, -1], j: [0, -1], s: [0, -1] }
+  if (moves[e.key]) { e.preventDefault(); move(moves[e.key][0] * step.x, moves[e.key][1] * step.y); place(); paint() }
+  else if (e.key === "+" || e.key === "=") zoom(1)
+  else if (e.key === "-" || e.key === "_") zoom(-1)
+  else if (e.key === "r") paint()
+})
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("button")
+  if (!b) return
+  if (b.dataset.size) { size = +b.dataset.size; save("size", size) }
+  if (b.dataset.fit) { fit = b.dataset.fit; save("fit", fit) }
+  if (b.dataset.zoom) return zoom(+b.dataset.zoom)
+  pressed()
+  paint()
+})
+
+let resizeTimer = 0
+addEventListener("resize", () => { place(); clearTimeout(resizeTimer); resizeTimer = setTimeout(paint, 250) })
+if (!START.webmercator) statusEl.textContent = "dragging assumes a web Mercator map"
+pressed()
+paint()
+</script>
+</body>
+</html>

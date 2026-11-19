@@ -12,7 +12,7 @@ title("Terminal")
 output({
   lat: 45.4375,
   lng: 12.3358,
-  scale: "1:15000",
+  scale: "8m", // the ground one character spans (a row, twice that)
   projection: "webmercator",
   screen: { kind: "text", width: 120, height: 44 },
 })

@@ -1,5 +1,8 @@
 //! Lengths as the profile writes them (`"6in"`, `"0.5mm"`, `152.4`) and map
-//! scales (`"1:10000"`).
+//! scales (`"1:10000"`, `"3m"`).
+//!
+//! A length is in the output's unit: a millimetre on paper, a pixel on a
+//! bitmap screen, a character on a text one ([`crate::paint`]).
 
 use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
@@ -101,7 +104,11 @@ impl Serialize for MmXY {
     }
 }
 
-/// Map scale as its denominator: `1:10000` is `10000.0`.
+/// Map scale: the ground one unit of the output spans, in mm. On paper that
+/// is the denominator (`"1:10000"` is `10000.0`: a millimetre spans ten
+/// metres); on a screen it is written as a length (`"3m"`: a pixel, or a
+/// character, spans three metres, `3000.0`). Either form reads the same way
+/// on either output.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Scale(pub f64);
 
@@ -119,6 +126,13 @@ impl Serialize for Scale {
 
 pub fn parse_scale(text: &str) -> Result<f64, String> {
     let s = text.trim();
+    if !s.contains(':') && s.ends_with(|c: char| c.is_ascii_alphabetic()) {
+        let ground = parse_length_mm(s).map_err(|_| format!("invalid scale {text:?} (use 1:10000, or the ground one unit spans: 3m)"))?;
+        if ground <= 0.0 {
+            return Err(format!("invalid scale {text:?}"));
+        }
+        return Ok(ground);
+    }
     let denominator = s.split_once(':').map(|(_, d)| d).unwrap_or(s);
     let value: f64 = denominator
         .trim()
@@ -137,7 +151,7 @@ impl<'de> Deserialize<'de> for Scale {
         impl Visitor<'_> for V {
             type Value = Scale;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a scale like \"1:10000\" or its denominator")
+                f.write_str("a scale like \"1:10000\", its denominator, or the ground a unit spans (\"3m\")")
             }
             fn visit_f64<E: de::Error>(self, v: f64) -> Result<Scale, E> {
                 Ok(Scale(v))
@@ -184,5 +198,10 @@ mod tests {
         assert_eq!(parse_scale("1:10000").unwrap(), 10000.0);
         assert_eq!(parse_scale("25000").unwrap(), 25000.0);
         assert!(parse_scale("1:0").is_err());
+        // The ground a unit spans: a pixel three metres wide.
+        assert_eq!(parse_scale("3m").unwrap(), 3000.0);
+        assert_eq!(parse_scale("50cm").unwrap(), 500.0);
+        assert!(parse_scale("0m").is_err());
+        assert!(parse_scale("3 parsecs").is_err());
     }
 }

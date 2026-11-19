@@ -86,15 +86,15 @@ impl Mask {
     }
 }
 
-/// From output millimetres to dots: `x / k`, `y / k`.
+/// From the output's units (pixels, or characters) to dots: `x / k`, `y / k`.
 #[derive(Clone, Copy, Debug)]
 pub struct ToDots {
-    pub mm_per_dot: f64,
+    pub per_dot: f64,
 }
 
 impl ToDots {
     pub fn at(&self, c: Coord<f64>) -> (f64, f64) {
-        (c.x / self.mm_per_dot, c.y / self.mm_per_dot)
+        (c.x / self.per_dot, c.y / self.per_dot)
     }
 }
 
@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn a_square_covers_the_dots_whose_centres_it_holds() {
         let sq = MultiPolygon::new(vec![polygon![(x: 1.0, y: 1.0), (x: 4.0, y: 1.0), (x: 4.0, y: 3.0), (x: 1.0, y: 3.0)]]);
-        let m = area_mask(&sq, ToDots { mm_per_dot: 1.0 }, 6, 5);
+        let m = area_mask(&sq, ToDots { per_dot: 1.0 }, 6, 5);
         let got: Vec<(usize, usize)> = m.dots().collect();
         assert_eq!(got, vec![(1, 1), (2, 1), (3, 1), (1, 2), (2, 2), (3, 2)]);
     }
@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn a_line_steps_dot_by_dot_and_stays_on_the_grid_margin() {
         let l = LineString::from(vec![(0.5, 0.5), (4.5, 2.5), (1000.0, 2.5)]);
-        let runs = line_dots(&l, ToDots { mm_per_dot: 1.0 }, 8, 4);
+        let runs = line_dots(&l, ToDots { per_dot: 1.0 }, 8, 4);
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0][0], (0, 0));
         assert!(runs[0].windows(2).all(|p| (p[0].0 - p[1].0).abs() <= 1 && (p[0].1 - p[1].1).abs() <= 1));

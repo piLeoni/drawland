@@ -8,7 +8,7 @@ use crate::place::{letter_at, Placed};
 use crate::raster::{area_mask, line_dots, Mask, ToDots};
 use crate::text::Text;
 use drawland_core::grammar_run::{PaintShape, Painted};
-use drawland_core::paint::{FillPaint, Ink, LinePaint, Look, Marker, PIXEL_MM};
+use drawland_core::paint::{FillPaint, Ink, LinePaint, Look, Marker};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bitmap {
@@ -101,7 +101,7 @@ fn other(ink: Ink) -> Ink {
 /// The layers painted on a `w` × `h` bitmap whose top-left pixel is
 /// `origin` in the world's pixels (where the patterns are read).
 pub fn paint(layers: &[Painted], placed: &Placed, w: usize, h: usize, invert: bool, origin: (i64, i64)) -> Bitmap {
-    let to = ToDots { mm_per_dot: PIXEL_MM };
+    let to = ToDots { per_dot: 1.0 };
     let mut bmp = Bitmap::new(w, h, invert);
     for (i, layer) in layers.iter().enumerate() {
         match (&layer.look, &layer.shape) {

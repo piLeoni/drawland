@@ -8,18 +8,21 @@
 //! line or box-drawing characters for lines, a pixel font or plain text for
 //! names, and the clear `halo` it keeps round its ink in what lies under it.
 //! The engine evaluates the graph as usual and hands each entry its
-//! geometry in output millimetres ([`crate::grammar_run::paint`]); the grid
+//! geometry in the output's units ([`crate::grammar_run::paint`]); the grid
 //! itself is drawn by `drawland-grid`.
+//!
+//! On a screen the output's unit is not the millimetre but the screen's own:
+//! a **pixel** on a bitmap, a **character** on text. Every length a profile
+//! writes (a buffer, an offset, `page.width`) counts them, and the scale is
+//! the ground one of them spans (`scale: "3m"`). A character is one unit
+//! across and two down (a row is as tall as two characters are wide), so a
+//! circle is still round on the screen.
 
 use crate::grammar::{At, Target};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// A pixel, in output millimetres: 1/96 in, a CSS pixel. A scale reads as on
-/// the web: at `1:4265` a pixel is about a metre and a tenth of ground.
-pub const PIXEL_MM: f64 = 25.4 / 96.0;
-
 /// A terminal cell is this many dots across and down (a Braille character's
-/// grid), each dot a [`PIXEL_MM`]: a cell twice as tall as it is wide.
+/// grid): a cell twice as tall as it is wide, so a dot is half a character.
 pub const CELL_DOTS: (u32, u32) = (2, 4);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,7 +37,7 @@ pub enum ScreenKind {
 
 /// `output({ screen: { kind: "text", width: 120, height: 40 } })`: the
 /// output is a screen this many pixels (a bitmap) or cells (text) across and
-/// down, and its size in mm follows from it.
+/// down, and its size in units follows from it ([`Screen::size`]).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Screen {
@@ -58,18 +61,27 @@ impl Screen {
         }
     }
 
-    /// The size of one unit (a pixel or a cell) in mm, across and down.
-    pub fn unit_mm(&self) -> (f64, f64) {
+    /// A cell of the grid in the output's units, across and down: a pixel
+    /// is one by one, a character one by two.
+    pub fn cell(&self) -> (f64, f64) {
         match self.kind {
-            ScreenKind::Bitmap => (PIXEL_MM, PIXEL_MM),
-            ScreenKind::Text => (PIXEL_MM * CELL_DOTS.0 as f64, PIXEL_MM * CELL_DOTS.1 as f64),
+            ScreenKind::Bitmap => (1.0, 1.0),
+            ScreenKind::Text => (1.0, 2.0),
         }
     }
 
-    /// The output's size in mm.
-    pub fn size_mm(&self) -> (f64, f64) {
-        let (w, h) = self.dots();
-        (w as f64 * PIXEL_MM, h as f64 * PIXEL_MM)
+    /// A dot in the output's units: a pixel, or half a character.
+    pub fn dot(&self) -> f64 {
+        match self.kind {
+            ScreenKind::Bitmap => 1.0,
+            ScreenKind::Text => 1.0 / CELL_DOTS.0 as f64,
+        }
+    }
+
+    /// The output's size in its units: pixels, or columns and twice the rows.
+    pub fn size(&self) -> (f64, f64) {
+        let (w, h) = self.cell();
+        (self.width as f64 * w, self.height as f64 * h)
     }
 
     pub fn validate(&self) -> Result<(), String> {

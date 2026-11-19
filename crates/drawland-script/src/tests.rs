@@ -1035,13 +1035,13 @@ fn a_screen_is_painted_layer_by_layer() {
     assert_eq!(g.paint.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["land", "water", "roads", "names"]);
     assert_eq!(g.paint[2].from.module.as_deref(), Some("roads"));
     assert!(g.draw.is_empty());
-    // `page.width` is the screen's: 100 cells of two dots.
+    // `page.width` is the screen's, counted in its pixels.
     let w = evaluate(
         "output({ lat: 0, lng: 0, screen: { kind: 'bitmap', width: 96, height: 10 } })\n\
          paint({ id: 'p', from: areas.shape({ at: [page.width / 2, 1], rect: [2, 1] }), fill: { pattern: 'solid' } })\n",
     )
     .unwrap();
-    assert!((w.output.width.0 - 25.4).abs() < 1e-9, "96 pixels are an inch");
+    assert_eq!((w.output.width.0, w.output.height.0), (96.0, 10.0));
 }
 
 #[test]
