@@ -32,5 +32,7 @@ target/
 # Bindings
 bindings/node/node_modules/
 bindings/node/*.node
+# The per-platform packages, made by scripts/publish.sh.
+bindings/node/npm/
 bindings/python/dist/
 bindings/python/python/drawland/*.so

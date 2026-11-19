@@ -1,6 +1,6 @@
 {
   "name": "drawland",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "OpenStreetMap drawn as layered pen-plotter SVGs, styled by a short JavaScript profile",
   "keywords": [
     "plotter",
@@ -31,12 +31,18 @@
     "native.js",
     "native.d.ts",
     "cli.js",
-    "*.node",
     "README.md",
     "LICENSE"
   ],
   "engines": {
     "node": ">= 18"
+  },
+  "optionalDependencies": {
+    "drawland-darwin-arm64": "0.3.1",
+    "drawland-darwin-x64": "0.3.1",
+    "drawland-linux-x64-gnu": "0.3.1",
+    "drawland-linux-arm64-gnu": "0.3.1",
+    "drawland-win32-x64-msvc": "0.3.1"
   },
   "napi": {
     "binaryName": "drawland",

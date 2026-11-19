@@ -61,6 +61,6 @@ cargo test
 
 The faces must agree: `drawland-script/tests/faces.rs`, the Python and Node tests compare a graph built in each with the same profile in JavaScript.
 
-Releases: push, let `.github/workflows/build.yml` build the wheels and addons, then `scripts/publish.sh <run-id>` (crates.io, PyPI, npm).
+Releases: push, let `.github/workflows/build.yml` build the wheels and addons, then `scripts/publish.sh <run-id>` (crates.io, PyPI, npm: `drawland` and one package per platform, `drawland-darwin-arm64`…).
 
 After changing a sibling library (`../penfill`, `../terramask`, `../burin-map`, `../deoverlap`), build and test there first, then rebuild draw.land.
