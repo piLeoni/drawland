@@ -154,7 +154,9 @@ fn place_one<'a>(layer: &Layer, named: &'a Named, taken: &mut Mask, seen: &mut H
                         Box { x: dot.x + side / 2 - across.0 / 2, y: dot.y - across.1 - (gap / 2).max(if lw > 1 { 1 } else { 0 }), w: across.0, h: across.1 },
                         Box { x: dot.x + side / 2 - across.0 / 2, y: dot.y + side + (gap / 2).max(if lw > 1 { 1 } else { 0 }), w: across.0, h: across.1 },
                     ];
-                    let Some(b) = spots.into_iter().find(|b| fits(b, taken) && !b.grown(pad).hits_box(&dot) && far(b, seen)) else {
+                    // The padding keeps other names off; the name's own
+                    // mark sits inside it (one cell off, on text).
+                    let Some(b) = spots.into_iter().find(|b| fits(b, taken) && !b.hits_box(&dot) && far(b, seen)) else {
                         return;
                     };
                     dot.take(taken);
@@ -359,5 +361,11 @@ mod tests {
         let (mark, run) = (&placed.marks[0], &placed.runs[0]);
         assert_eq!((mark.x, mark.y), (10, 10));
         assert_eq!((run.x, run.y), (12, 10));
+        // Padded, as the terminal profile's places are: the padding keeps
+        // other names off, not the name's own mark a cell away.
+        let padded = TextPaint { padding: 2, ..paint };
+        let placed = place(&[layer(&padded, &names)], (40, 20));
+        assert_eq!((placed.marks.len(), placed.runs.len()), (1, 1));
+        assert_eq!((placed.runs[0].x, placed.runs[0].y), (12, 10));
     }
 }
