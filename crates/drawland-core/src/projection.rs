@@ -211,13 +211,18 @@ impl Projector {
         (self.half.0 + dx * self.cos_b - dy * self.sin_b, self.half.1 + dx * self.sin_b + dy * self.cos_b)
     }
 
-    /// Output mm back to `(lon, lat)`, for a PROJ projection; `None` for the
-    /// built-in ones, whose ground area is a geodesic rectangle anyway.
+    /// Output mm back to `(lon, lat)`: web Mercator's and PROJ's own
+    /// inverse, UTM's by [`Projector::locate`]. `None` off the projection's
+    /// world.
     pub fn unproject(&self, x: f64, y: f64) -> Option<(f64, f64)> {
-        let Base::Proj(p) = &self.base else { return None };
         let (px, py) = (x - self.half.0, y - self.half.1);
         let (dx, dy) = (px * self.cos_b + py * self.sin_b, -px * self.sin_b + py * self.cos_b);
-        p.inverse(self.center.0 + dx / self.sx, self.center.1 + dy / self.sy)
+        let (bx, by) = (self.center.0 + dx / self.sx, self.center.1 + dy / self.sy);
+        match &self.base {
+            Base::Proj(p) => p.inverse(bx, by),
+            Base::Merc => Some(((bx / WGS84_A).to_degrees(), (2.0 * (by / WGS84_A).exp().atan() - std::f64::consts::FRAC_PI_2).to_degrees())),
+            Base::Utm(_) => self.locate(x, y),
+        }
     }
 
     /// The `(lon, lat)` under output mm `(x, y)`, for any projection: Newton
