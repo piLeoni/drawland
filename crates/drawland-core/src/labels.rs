@@ -346,36 +346,51 @@ fn road_rank(f: &Feature) -> f64 {
         "service" | "busway" => 0.15,
         "rail" | "transit" => 0.2,
         "track" | "path" | "footway" | "cycleway" | "pedestrian" => 0.05,
+        // A ferry's line is named for its stops ("Ferrovia - Colonna"):
+        // below the streets, or a lagoon's boats outname its islands.
+        "ferry" => 0.1,
         _ => 0.3,
     }
 }
 
+/// Whether a feature names a place (a city, a quarter, an island): from
+/// the tiles' `place` layer or with OSM's `place` tag. Places are placed
+/// before every other name, as a web map's place layers sit over its road
+/// names: a quarter's name is not lost to the streets in it.
+fn is_place(f: &Feature) -> bool {
+    f.tag("tiles:layer") == Some("place") || f.tag("tiles:layer").is_none() && f.tag("place").is_some()
+}
+
 fn pin_rank(f: &Feature) -> f64 {
     let layer = f.tag("tiles:layer").unwrap_or("");
-    let class = f.tag("class").unwrap_or("");
-    if layer == "place" {
-        // OpenMapTiles ranks places (1 the most important): a regional capital
-        // like Milan is 3, a provincial one like Pavia 11, towns 12–18. That,
-        // and a capital's standing, beat the class alone, which makes every
-        // city equal.
-        if let Some(rank) = f.tag("rank").and_then(|r| r.parse::<f64>().ok()) {
-            let bonus = match f.tag("capital") {
-                Some("2") => 0.25,
-                Some("3") | Some("4") => 0.1,
-                _ => 0.0,
-            };
-            return (((18.0 - rank) / 15.0).clamp(0.05, 1.0) + bonus).min(1.0);
-        }
-        return match class {
-            "city" => 1.0,
-            "town" => 0.85,
-            "suburb" => 0.55,
-            "neighbourhood" | "neighborhood" => 0.5,
-            "quarter" => 0.45,
-            "island" => 0.4,
-            "hamlet" | "village" => 0.35,
-            _ => 0.3,
+    if is_place(f) {
+        let class = if layer == "place" { f.tag("class") } else { f.tag("place") }.unwrap_or("");
+        // The class sets the band: a city over a town over a quarter. Inside
+        // it OpenMapTiles' rank orders them (1 the most important: Milan 3,
+        // Pavia 11, towns from 12, and a city's quarters numbered on past 50
+        // by local importance), never flattening the long tail to one value.
+        let (lo, hi) = match class {
+            "continent" | "country" => (0.9, 1.0),
+            "state" | "province" => (0.8, 0.95),
+            "city" => (0.75, 1.0),
+            "town" => (0.6, 0.8),
+            "village" | "suburb" => (0.45, 0.6),
+            "quarter" => (0.35, 0.5),
+            "neighbourhood" | "neighborhood" => (0.3, 0.45),
+            "island" => (0.3, 0.8),
+            "hamlet" => (0.25, 0.4),
+            _ => (0.2, 0.35),
         };
+        let within = match f.tag("rank").and_then(|r| r.parse::<f64>().ok()) {
+            Some(rank) => 1.0 / (1.0 + (rank - 1.0).max(0.0) / 8.0),
+            None => 0.5,
+        };
+        let bonus = match f.tag("capital") {
+            Some("2") => 0.25,
+            Some("3") | Some("4") => 0.1,
+            _ => 0.0,
+        };
+        return (lo + (hi - lo) * within + bonus).min(1.0);
     }
     if layer == "poi" {
         return 0.25;
@@ -394,6 +409,8 @@ struct Candidate {
     rank: f64,
     /// Length or the square root of the area, mm: the tie-break, larger first.
     extent: f64,
+    /// A place's name ([`is_place`]): placed before every other.
+    place: bool,
     shape: Shape,
     look: Look,
     /// The matching rule's `id`, when it has one.
@@ -655,10 +672,10 @@ pub fn place_avoiding(
         if let Some(poly) = polys.into_iter().max_by(|a, b| a.unsigned_area().total_cmp(&b.unsigned_area())) {
             let area = poly.unsigned_area();
             let rank = (0.25 + (area / page).sqrt()).min(1.0);
-            candidates.push(Candidate { text: name, rank, extent: area.sqrt(), shape: Shape::Area(poly), look, rule });
+            candidates.push(Candidate { text: name, rank, extent: area.sqrt(), place: is_place(f), shape: Shape::Area(poly), look, rule });
         } else if let geo::Geometry::Point(p) = &f.geometry {
             let rank = pin_rank(f);
-            candidates.push(Candidate { text: name, rank, extent: 1.0, shape: Shape::Pin(p.0), look, rule });
+            candidates.push(Candidate { text: name, rank, extent: 1.0, place: is_place(f), shape: Shape::Pin(p.0), look, rule });
         } else {
             let class = f.tag("class").or_else(|| f.tag("highway")).unwrap_or("").to_string();
             let entry = roads.entry((name, class)).or_insert_with(|| (road_rank(f), Vec::new(), look, rule));
@@ -676,13 +693,14 @@ pub fn place_avoiding(
                 text: name.clone(),
                 rank,
                 extent,
+                place: false,
                 shape: Shape::Road(pts),
                 look: look.clone(),
                 rule: rule.clone(),
             });
         }
     }
-    candidates.sort_by(|a, b| b.rank.total_cmp(&a.rank).then(b.extent.total_cmp(&a.extent)));
+    candidates.sort_by(|a, b| b.place.cmp(&a.place).then(b.rank.total_cmp(&a.rank)).then(b.extent.total_cmp(&a.extent)));
 
     let max_cap = candidates.iter().map(|c| c.look.size.0.max(c.look.min_size.0)).fold(style.size.0, f64::max);
     let mut taken = Taken::new(max_cap * 4.0);
@@ -995,6 +1013,45 @@ mod tests {
 
     fn frame() -> MultiPolygon<f64> {
         MultiPolygon::new(vec![geo::Rect::new((0.0, 0.0), (100.0, 100.0)).to_polygon()])
+    }
+
+    fn place_pin(name: &str, class: &str, rank: &str, at: (f64, f64)) -> Feature {
+        Feature {
+            element: Element::Tile,
+            id: 0,
+            tags: [("name", name), ("tiles:layer", "place"), ("class", class), ("rank", rank)].into_iter().map(|(k, v)| (k.into(), v.into())).collect(),
+            geometry: Geometry::Point(at.into()),
+        }
+    }
+
+    #[test]
+    fn places_rank_by_class_then_by_their_rank() {
+        // Central Milan's places as OpenMapTiles ranks them: a quarter's rank
+        // runs on past 50, where (18 - rank) / 15 left every one at the floor
+        // with the footpaths.
+        let r = |class: &str, rank: &str| pin_rank(&place_pin("x", class, rank, (0.0, 0.0)));
+        let order = [r("city", "3"), r("town", "15"), r("suburb", "13"), r("suburb", "23"), r("quarter", "34"), r("neighbourhood", "56")];
+        assert!(order.windows(2).all(|w| w[0] > w[1]), "{order:?}");
+        assert!(order[5] > 0.25, "{order:?}");
+        // An OSM place, with no tiles' layer, is a place too.
+        let osm = Feature { tags: [("name", "Brera"), ("place", "suburb")].into_iter().map(|(k, v)| (k.into(), v.into())).collect(), ..place_pin("x", "", "", (0.0, 0.0)) };
+        assert!(is_place(&osm) && pin_rank(&osm) > 0.4);
+        // A ferry's line is below the streets.
+        assert!(road_rank(&road("Linea Rosa", "ferry", &[])) < road_rank(&road("Calle", "minor", &[])));
+    }
+
+    #[test]
+    fn a_place_is_named_before_the_motorway_through_it() {
+        // The motorway's name would sit on its middle, over the quarter's
+        // point; the quarter is placed first and the motorway moves along.
+        let style: Style = serde_json::from_value(serde_json::json!({
+            "rules": [{ "id": "places", "tags": { "tiles:layer": "place" } }],
+        }))
+        .unwrap();
+        let motorway = road("Autostrada dei Laghi", "motorway", &[(0.0, 50.0), (100.0, 50.0)]);
+        let quarter = place_pin("Porta Romana", "quarter", "40", (50.0, 50.0));
+        let placed = place(&[motorway, quarter], &frame(), &style, &GoogleFonts::new(), &StrokeFonts::new()).unwrap();
+        assert!(placed.buckets.get("places").is_some_and(|b| !b.lines.is_empty()), "the quarter is named");
     }
 
     #[test]

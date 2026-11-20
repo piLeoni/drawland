@@ -22,6 +22,8 @@ By default, label placement (`labels::place`) checks glyph quads against the dra
 
 Rules match tags (`tiles:layer`, road `class`, etc.), set sizes (`size`, `minSize`), fonts, buffering along lines (`buffer`, `keepCenterline`).
 
+**Order of placement.** Names are placed one by one, each kept off the ones before, so the order decides which survive. Places (`is_place`: the tiles' `place` layer, or OSM's `place` tag) go first, every one before any road, park or POI, as a web map's place layers sit over its road names; then everything by `rank`, then by extent. A place's `rank` (`pin_rank`, which also sets its size between `minSize` and `size`) is a band by class (city 0.75–1, town 0.6–0.8, suburb and village 0.45–0.6, quarter 0.35–0.5, neighbourhood 0.3–0.45…) with OpenMapTiles' `rank` ordering inside it as `1 / (1 + (rank − 1) / 8)`, plus a capital's bonus. OpenMapTiles numbers a city's quarters on past 50 by local importance; the old `(18 − rank) / 15` flattened every one to the floor, with the footpaths, so a city's streets (and a lagoon's ferry lines) outnamed its districts. Ferries rank 0.1, under the streets.
+
 Outputs used by profiles:
 
 - `labels.lines` — ink strokes
