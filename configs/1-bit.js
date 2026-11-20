@@ -29,7 +29,9 @@ const NAMED = [...MAJOR, "tertiary"]
 
 const water = areas.polygons(features.tiles("water"))
 const canals = lines.of(features.tiles("waterway:canal,river,stream"))
-const parks = areas.polygons(features.tiles("parks", "grass", "forest"))
+// Parks on land only: a marine reserve (the Pelagos Sanctuary, a triangle
+// from Provence to Liguria to Corsica) is a park in the tiles, not on the sea.
+const parks = areas.difference(areas.polygons(features.tiles("parks", "grass", "forest")), water)
 const buildings = areas.polygons(features.tiles("buildings"))
 const roads = features.tiles("roads")
 const major = lines.of(features.where(roads, { class: MAJOR }))
