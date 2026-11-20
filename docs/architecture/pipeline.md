@@ -17,7 +17,7 @@ Turn a **place** and a **profile** into a single layered **SVG** measured in pap
 
 ## Output model
 
-`Output` (`output.rs`) holds centre, `width_mm` / `height_mm`, scale denominator, bearing, projection mode, optional `tile_zoom`. Ground extent follows from scale and paper size; `query_polygon()` drives Overpass and tile selection.
+`Output` (`output.rs`) holds centre, `width_mm` / `height_mm`, scale denominator, bearing, projection mode, optional `tile_zoom`. Ground extent follows from scale and paper size; `query_polygon()` drives Overpass and tile selection: the page's edge taken back through the projection (`Projector::unproject`) for web Mercator and PROJ, a geodesic rectangle walked from the centre for UTM. A walked rectangle is wrong far out: a web Mercator scene a continent wide reaches much further north than a geodesic walked east from the top's middle, which bends back toward the equator and cut the north off the tiles read.
 
 ## Projection
 

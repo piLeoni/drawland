@@ -42,9 +42,10 @@ impl Output {
         1000.0 / self.scale
     }
 
-    /// The output's ground rectangle in lon/lat, rotated by the bearing. Corners
-    /// are found by walking geodesics from the centre, so the sides are the
-    /// requested ground distance apart at any latitude.
+    /// The ground under the output in lon/lat: its edge taken back through
+    /// the projection. For UTM, or where that fails, a rectangle rotated by
+    /// the bearing, its corners walked as geodesics from the centre, the
+    /// sides the requested ground distance apart.
     pub fn query_polygon(&self) -> Polygon<f64> {
         if let Some(frame) = self.projected_frame() {
             return frame;
@@ -69,11 +70,14 @@ impl Output {
         Polygon::new(LineString::new(ring), vec![])
     }
 
-    /// For a PROJ projection, the output's edge taken back to the ground: the
-    /// projection may turn or shear the ground under the output, which a
-    /// rectangle walked from the centre would miss.
+    /// The output's edge taken back to the ground. A projection turns,
+    /// shears or stretches the ground under the output, which a rectangle
+    /// walked from the centre misses: web Mercator a continent wide reaches
+    /// far further north than a geodesic walked east from the top's middle,
+    /// which bends back toward the equator. Not UTM's: its distances are
+    /// true, so the walked rectangle is its ground already.
     fn projected_frame(&self) -> Option<Polygon<f64>> {
-        if !matches!(self.projection, ProjectionMode::Proj(_)) {
+        if self.projection == ProjectionMode::Utm {
             return None;
         }
         const PER_SIDE: usize = 16;
@@ -111,6 +115,11 @@ impl Output {
     /// `90` or `-90` when that pole is drawn on the page, for a PROJ
     /// projection that reaches it (the web map's never does).
     pub fn pole_on_page(&self, p: &crate::projection::Projector) -> Option<f64> {
+        // Web Mercator's poles are infinitely far: only its clamp at 85.05°
+        // would put one on a page that reaches that far.
+        if self.projection == ProjectionMode::Webmercator {
+            return None;
+        }
         [90.0, -90.0].into_iter().find(|&lat| {
             let (x, y) = p.project(0.0, lat);
             x.is_finite() && y.is_finite() && (0.0..=self.width_mm).contains(&x) && (0.0..=self.height_mm).contains(&y)
@@ -228,6 +237,7 @@ pub fn overpass_query(polygon: &Polygon<f64>, tags: &[&str], timeout_s: u32) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use geo::BoundingRect;
 
     fn ferry() -> Output {
         Output {
@@ -251,6 +261,26 @@ mod tests {
              37.790971 -122.402126 37.790971 -122.384823 37.800125 -122.384822');(._;>;););"
         ));
         assert!(q.ends_with(");out;"));
+    }
+
+    #[test]
+    fn a_wide_web_mercator_page_reads_its_whole_ground() {
+        // The 1-bit scene far out over the Mediterranean: 2205 × 1014 pixels
+        // of 4.9 km. A geodesic walked east from the top's middle bends to
+        // the equator, and the corners it found cut off the north.
+        let scale = 4_859_118.0;
+        let o = Output { center: (12.85, 41.5), width_mm: 2205.0, height_mm: 1014.0, scale, bearing: 0.0, projection: ProjectionMode::Webmercator, tile_zoom: None };
+        let r = o.query_polygon().bounding_rect().unwrap();
+        // The page's top and bottom in Mercator, back to latitudes.
+        let a = 6_378_137.0;
+        let y0 = a * (std::f64::consts::FRAC_PI_4 + 41.5f64.to_radians() / 2.0).tan().ln();
+        let half = 507.0 * scale / 1000.0 / 41.5f64.to_radians().cos();
+        let lat = |y: f64| (2.0 * (y / a).exp().atan() - std::f64::consts::FRAC_PI_2).to_degrees();
+        assert!((r.max().y - lat(y0 + half)).abs() < 1e-6 && (r.min().y - lat(y0 - half)).abs() < 1e-6, "{r:?}");
+        // Every corner's latitude is the edge's: the top is a parallel.
+        let ring = o.query_polygon();
+        let north = ring.exterior().0.iter().filter(|c| (c.y - lat(y0 + half)).abs() < 1e-6).count();
+        assert!(north >= 17, "{ring:?}");
     }
 
     #[test]
