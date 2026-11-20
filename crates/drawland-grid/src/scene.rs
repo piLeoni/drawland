@@ -62,6 +62,15 @@ impl View {
         let (w, h) = self.screen.dots();
         ((self.center.0 / per_dot).round() as i64 - w as i64 / 2, (-self.center.1 / per_dot).round() as i64 - h as i64 / 2)
     }
+
+    /// The vector tiles' zoom whose detail is the view's: a tile's pixel
+    /// (a 512-pixel tile) no wider than a dot. A web map picks its tiles so,
+    /// which keeps a scene a few dozen tiles at any scale; deeper than the
+    /// tile source goes, the source's deepest is read.
+    pub fn tile_zoom(&self) -> u8 {
+        let world = 2.0 * std::f64::consts::PI * R;
+        (world / (512.0 * self.per_unit * self.screen.dot())).log2().ceil().clamp(0.0, 22.0) as u8
+    }
 }
 
 /// The layers of a wide screen, each piece with its box, to be painted as
@@ -108,15 +117,30 @@ impl Scene {
         dx + hx <= sw / 2.0 * self.view.per_unit && dy + hy <= sh / 2.0 * self.view.per_unit
     }
 
-    /// `view` painted from this scene's geometry.
-    pub fn render(&self, view: &View) -> Picture {
+    /// `view` painted from this scene's geometry, and how far the picture
+    /// is off the view, in units: the map is moved by whole cells (pixels on
+    /// a bitmap, characters on text), so names, lines and patterns keep
+    /// their places on it from one frame to the next, and a host shows the
+    /// picture moved by this much to put it where the view is.
+    pub fn render(&self, view: &View) -> (Picture, (f64, f64)) {
         let k = self.view.per_unit / view.per_unit;
         let (sw, sh) = self.view.screen.size();
         let (vw, vh) = view.screen.size();
-        let t = Coord {
+        let exact = Coord {
             x: vw / 2.0 - sw / 2.0 * k + (self.view.center.0 - view.center.0) / view.per_unit,
             y: vh / 2.0 - sh / 2.0 * k - (self.view.center.1 - view.center.1) / view.per_unit,
         };
+        let (cw, ch) = view.screen.cell();
+        let t = Coord { x: (exact.x / cw).round() * cw, y: (exact.y / ch).round() * ch };
+        // Patterns read where the moved map puts them: the origin follows
+        // the same whole steps as the geometry.
+        let dot = view.screen.dot();
+        let per_dot = view.per_unit * dot;
+        let (wd, hd) = view.screen.dots();
+        let origin = (
+            ((exact.x / dot + view.center.0 / per_dot).round() - t.x / dot) as i64 - wd as i64 / 2,
+            ((exact.y / dot - view.center.1 / per_dot).round() - t.y / dot) as i64 - hd as i64 / 2,
+        );
         let to = |c: Coord<f64>| Coord { x: c.x * k + t.x, y: c.y * k + t.y };
         // The view in the scene's units, a margin round it for halos and
         // names that start outside it.
@@ -147,7 +171,7 @@ impl Scene {
                 Painted { id: l.id.clone(), look: l.look.clone(), halo: l.halo, shape }
             })
             .collect();
-        crate::render(&view.screen, view.origin(), &layers)
+        (crate::render(&view.screen, origin, &layers), (exact.x - t.x, exact.y - t.y))
     }
 }
 
@@ -185,7 +209,7 @@ mod tests {
         let solid = Look::Fill(FillPaint { pattern: Some("solid".into()), ..FillPaint::default() });
         let layers = vec![Painted { id: "a".into(), look: solid, halo: Halo(0, 0), shape: PaintShape::Area(MultiPolygon::new(vec![square(18.0, 18.0, 4.0)])) }];
         let scene = Scene::new(at, layers);
-        let black = |v: &View| match scene.render(v) {
+        let black = |v: &View| match scene.render(v).0 {
             Picture::Bitmap(b) => (0..10).flat_map(|y| (0..10).map(move |x| (x, y))).filter(|&(x, y)| b.black(x, y)).collect::<Vec<_>>(),
             _ => unreachable!(),
         };
@@ -198,6 +222,13 @@ mod tests {
         // Twice as near: twice as big, still centred.
         let near = View { per_unit: at.per_unit / 2.0, ..same };
         assert_eq!(black(&near).len(), 64);
+        // Half a pixel east: the map moved one whole pixel, the picture
+        // said to be half a pixel off.
+        let half = View { center: (at.center.0 + 0.5 * at.per_unit, at.center.1), ..same };
+        let (_, off) = scene.render(&half);
+        assert!((off.0.abs() - 0.5).abs() < 1e-9 && off.1.abs() < 1e-9);
+        assert_eq!(at.tile_zoom(), 15);
+        assert!(View { per_unit: at.per_unit * 64.0, ..at }.tile_zoom() == 9);
         assert!(scene.covers(&same) && !scene.covers(&near) && !scene.covers(&View { center: (at.center.0 + 40.0 * at.per_unit, at.center.1), ..same }));
     }
 }

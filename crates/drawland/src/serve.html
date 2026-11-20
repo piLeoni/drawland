@@ -156,7 +156,10 @@ async function pump() {
     if (!r.ok) throw new Error(await r.text())
     building = r.headers.get("X-Scene") === "building"
     const frame = bitmap ? fromPbm(new Uint8Array(await r.arrayBuffer())) : fromRuns(await r.json(), g)
-    shown = { ...frame, mx, my, per: perUnit(at), ux: g.ux, uy: g.uy, cssW: g.cssW, cssH: g.cssH }
+    // The map in the frame is moved by whole cells; it is this far (units)
+    // short of the view asked for.
+    const [dx, dy] = (r.headers.get("X-Shift") || "0,0").split(",").map(Number)
+    shown = { ...frame, mx, my, dx, dy, per: perUnit(at), ux: g.ux, uy: g.uy, cssW: g.cssW, cssH: g.cssH }
     lastMs = Math.round(performance.now() - t0)
     draw()
   } catch (e) {
@@ -227,8 +230,8 @@ function draw() {
   if (shown) {
     const per = perUnit(state), [mx, my] = mercator(state.lat, state.lng)
     const sx = shown.per / per * g.ux / shown.ux, sy = shown.per / per * g.uy / shown.uy
-    const left = g.x + g.cssW / 2 - shown.cssW / 2 * sx + (shown.mx - mx) / per * g.ux
-    const top = g.y + g.cssH / 2 - shown.cssH / 2 * sy - (shown.my - my) / per * g.uy
+    const left = g.x + g.cssW / 2 - shown.cssW / 2 * sx + (shown.mx - mx) / per * g.ux + shown.dx * shown.ux * sx
+    const top = g.y + g.cssH / 2 - shown.cssH / 2 * sy - (shown.my - my) / per * g.uy + shown.dy * shown.uy * sy
     ctx.imageSmoothingEnabled = shown.smooth && Math.abs(sx - 1) > 1e-6
     // Whole device pixels while the scale holds, so a bitmap stays sharp.
     const snap = v => Math.round(v * dpr) / dpr

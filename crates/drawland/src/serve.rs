@@ -6,7 +6,10 @@
 //! scene's geometry moved, zoomed and painted, which takes milliseconds. A
 //! frame that nears the scene's edge, or zooms half a step from its scale,
 //! asks for a new scene, built on this (the main) thread while frames go on
-//! being painted from the old one. A bitmap frame is a PBM (1 bit a pixel),
+//! being painted from the old one; its vector tiles are as deep as the
+//! view's detail ([`View::tile_zoom`]), so a scene far out is as quick as one
+//! near. A frame moves the map by whole cells and says (`X-Shift`) how far
+//! that leaves it off the view, for the page to make up. A bitmap frame is a PBM (1 bit a pixel),
 //! a text frame each row's runs of one colour as JSON. One profile a port,
 //! so a 1-bit and a text site run side by side, each its own page.
 
@@ -96,7 +99,7 @@ pub fn run(drawer: &Drawer, profile: &Profile, place: &Place, port: u16) -> Resu
 }
 
 /// The scene for `view`: the graph run at its centre and scale on a screen
-/// [`WIDE`] times its size.
+/// [`WIDE`] times its size, its tiles at the view's zoom.
 fn build(drawer: &Drawer, profile: &Profile, grammar: &Grammar, view: &View) -> Result<Scene, String> {
     let (lng, lat) = drawland_grid::scene::geographic(view.center);
     let mut grammar = grammar.clone();
@@ -105,6 +108,9 @@ fn build(drawer: &Drawer, profile: &Profile, grammar: &Grammar, view: &View) -> 
     screen.height = ((screen.height as f64 * WIDE) as u32).min(8192);
     grammar.output.screen = Some(screen);
     grammar.output.scale.0 = view.per_unit * 1000.0 * lat.to_radians().cos();
+    // Tiles as deep as the view's detail, not as deep as a cap allows: far
+    // out, a scene reads a few dozen shallow tiles, not a thousand deep ones.
+    grammar.output.tile_zoom = Some(view.tile_zoom());
     grammar.output.fit_screen()?;
     drawer.scene_graph(&grammar, &Place::at(lat, lng), profile.dir(), &())
 }
@@ -117,8 +123,8 @@ fn serve(stream: TcpStream, state: &State, want: &mpsc::Sender<View>, page: &str
         let (path, query) = target.split_once('?').unwrap_or((&target, ""));
         let reply = match path {
             "/" => Reply::ok("text/html; charset=utf-8", page.as_bytes().to_vec()),
-            "/frame" => frame(state, want, screen, query).unwrap_or_else(|e| Reply { status: "422 Unprocessable Content", kind: "text/plain; charset=utf-8", body: e.into_bytes(), scene: "" }),
-            _ => Reply { status: "404 Not Found", kind: "text/plain", body: b"not here".to_vec(), scene: "" },
+            "/frame" => frame(state, want, screen, query).unwrap_or_else(|e| Reply { status: "422 Unprocessable Content", kind: "text/plain; charset=utf-8", body: e.into_bytes(), scene: "", shift: String::new() }),
+            _ => Reply { status: "404 Not Found", kind: "text/plain", body: b"not here".to_vec(), scene: "", shift: String::new() },
         };
         if reply.send(&mut out).is_err() {
             return;
@@ -164,13 +170,13 @@ fn frame(state: &State, want: &mpsc::Sender<View>, screen: Screen, query: &str) 
     let scene = shared.scene.clone().unwrap();
     let building = shared.building;
     drop(shared);
-    let picture = scene.render(&view);
+    let (picture, (dx, dy)) = scene.render(&view);
     let body = match &picture {
         Picture::Bitmap(b) => b.pbm(),
         Picture::Text(t) => text_runs(t).into_bytes(),
     };
     let kind = if matches!(picture, Picture::Bitmap(_)) { "image/x-portable-bitmap" } else { "application/json" };
-    Ok(Reply { status: "200 OK", kind, body, scene: if building { "building" } else { "ready" } })
+    Ok(Reply { status: "200 OK", kind, body, scene: if building { "building" } else { "ready" }, shift: format!("{dx:.4},{dy:.4}") })
 }
 
 /// Text cells as JSON: each row a list of `[text, fg, bg]` runs of one colour.
@@ -229,20 +235,23 @@ struct Reply {
     body: Vec<u8>,
     /// Whether a newer scene is on its way (`building`) or not (`ready`).
     scene: &'static str,
+    /// How far the picture is off the view asked for, in units (`dx,dy`).
+    shift: String,
 }
 
 impl Reply {
     fn ok(kind: &'static str, body: Vec<u8>) -> Reply {
-        Reply { status: "200 OK", kind, body, scene: "" }
+        Reply { status: "200 OK", kind, body, scene: "", shift: String::new() }
     }
 
     fn send(self, stream: &mut TcpStream) -> std::io::Result<()> {
         let head = format!(
-            "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Scene: {}\r\n\r\n",
+            "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Scene: {}\r\nX-Shift: {}\r\n\r\n",
             self.status,
             self.kind,
             self.body.len(),
-            self.scene
+            self.scene,
+            self.shift
         );
         stream.write_all(head.as_bytes())?;
         stream.write_all(&self.body)
