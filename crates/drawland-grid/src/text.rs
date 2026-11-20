@@ -109,6 +109,19 @@ impl Text {
         Some(&mut self.cells[y as usize * self.width + x as usize])
     }
 
+    /// An interface laid over the cells, in `palette`'s colours; where it
+    /// has no cell the map shows.
+    pub fn overlay(&mut self, chrome: &crate::ui::Chrome, palette: &crate::ui::Palette) {
+        for y in 0..chrome.height.min(self.height) {
+            for x in 0..chrome.width.min(self.width) {
+                if let Some((ch, role)) = chrome.cell(x, y) {
+                    let (fg, bg) = palette.at(role, y, chrome.height);
+                    self.cells[y * self.width + x] = Cell { kind: Kind::Char(ch), fg: Some(fg), bg: Some(bg) };
+                }
+            }
+        }
+    }
+
     /// One Braille dot of the screen's dot grid set, in `fg`.
     pub fn dot(&mut self, x: i64, y: i64, fg: Option<Rgb>) {
         let (cx, cy) = (x.div_euclid(2), y.div_euclid(4));

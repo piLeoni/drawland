@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>edit · draw.land</title>
+<style>
+  /* The editor in the map page's look: a bar on top, a status line under,
+     the theme's paper and ink and the mixes of them; on a 1-bit screen
+     black and white alone, no greys. */
+  :root { --mono: ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", Consolas, monospace; --paper: #0a0b0d; --ink: #eef1f6; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { display: flex; flex-direction: column; background: var(--paper); color: var(--ink); font: 14px/1.45 var(--mono); }
+  .bar { display: flex; align-items: center; gap: 1ch; padding: 0 1ch; height: 1.6em; background: var(--bar); white-space: nowrap; overflow: hidden; }
+  .bar .dim, .dim { color: var(--dim); }
+  .bar .grow { flex: 1; }
+  .bar.top { border-bottom: 1px solid var(--rule); }
+  .bar.bottom { border-top: 1px solid var(--rule); }
+  button { font: inherit; color: var(--ink); background: transparent; border: 0; padding: 0 1ch; cursor: pointer; }
+  button:hover, button:focus-visible { background: var(--ink); color: var(--paper); outline: none; }
+  .on { background: var(--ink); color: var(--paper); }
+  textarea { flex: 1; width: 100%; resize: none; border: 0; outline: none; padding: 1ch 2ch; background: var(--paper); color: var(--ink); font: inherit; tab-size: 2; white-space: pre; overflow: auto; }
+  textarea::selection { background: var(--ink); color: var(--paper); }
+  #status.error { background: var(--ink); color: var(--paper); padding: 0 1ch; }
+</style>
+</head>
+<body>
+<div class="bar top">
+  <span class="on">&nbsp;edit&nbsp;</span>
+  <span id="file"></span>
+  <span class="grow"></span>
+  <button id="save" title="Save and draw again (⌘S, Ctrl-S)">save</button>
+  <button id="revert" title="Read the file again">revert</button>
+  <button id="close" title="Close the editor">close</button>
+</div>
+<textarea id="text" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+<div class="bar bottom"><span id="status" class="dim">reading…</span><span class="grow"></span><span id="where" class="dim"></span></div>
+<script>
+const params = new URLSearchParams(location.search)
+const style = params.get("style") || "", theme = params.get("theme") || "ink", bitmap = params.get("kind") === "bitmap"
+// draw.land's themes, as the map's interface has them.
+const THEMES = { paper: ["#ffffff", "#000000"], ink: ["#0a0b0d", "#eef1f6"], silk: ["#f7f6f2", "#5f5d58"], abyss: ["#0b2326", "#e9dfc8"], ember: ["#120e06", "#ffbf3a"], phosphor: ["#0a0f0a", "#41ff41"] }
+const [paper, ink] = bitmap ? (theme === "ink" ? ["#000000", "#ffffff"] : ["#ffffff", "#000000"]) : (THEMES[theme] || THEMES.ink)
+const mix = t => { const p = n => parseInt(paper.slice(n, n + 2), 16), i = n => parseInt(ink.slice(n, n + 2), 16); return "#" + [1, 3, 5].map(n => Math.round(p(n) + (i(n) - p(n)) * t).toString(16).padStart(2, "0")).join("") }
+const root = document.documentElement.style
+root.setProperty("--paper", paper); root.setProperty("--ink", ink)
+root.setProperty("--bar", bitmap ? paper : mix(0.07)); root.setProperty("--dim", bitmap ? ink : mix(0.55)); root.setProperty("--rule", bitmap ? ink : mix(0.3))
+document.title = `${style} · edit · draw.land`
+
+const text = document.getElementById("text"), statusEl = document.getElementById("status")
+let savedText = ""
+const say = (s, bad = false) => { statusEl.textContent = s; statusEl.className = bad ? "error" : "dim" }
+
+async function read() {
+  const r = await fetch(`/source?style=${encodeURIComponent(style)}`)
+  if (!r.ok) return say(await r.text(), true)
+  document.getElementById("file").textContent = r.headers.get("X-File") || style
+  text.value = savedText = await r.text()
+  say("read")
+  where()
+}
+
+async function save() {
+  say("saving…")
+  const r = await fetch(`/source?style=${encodeURIComponent(style)}`, { method: "POST", body: text.value })
+  if (!r.ok) return say((await r.text()).split("\n")[0], true)
+  savedText = text.value
+  try { new BroadcastChannel("drawland").postMessage({ saved: style }) } catch {}
+  say("saved · drawn again")
+}
+
+function where() {
+  const before = text.value.slice(0, text.selectionStart).split("\n")
+  document.getElementById("where").textContent = `${before.length}:${before.at(-1).length + 1}${text.value !== savedText ? " · changed" : ""}`
+}
+
+text.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save() }
+  else if (e.key === "Tab") { e.preventDefault(); text.setRangeText("  ", text.selectionStart, text.selectionEnd, "end"); where() }
+})
+for (const ev of ["input", "click", "keyup"]) text.addEventListener(ev, where)
+document.getElementById("save").onclick = save
+document.getElementById("revert").onclick = read
+document.getElementById("close").onclick = () => window.close()
+addEventListener("beforeunload", e => { if (text.value !== savedText) e.preventDefault() })
+read()
+</script>
+</body>
+</html>

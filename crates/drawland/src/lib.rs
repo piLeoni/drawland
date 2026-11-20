@@ -16,6 +16,7 @@
 //! # Ok::<(), String>(())
 //! ```
 
+pub mod chrome;
 pub mod cli;
 mod fonts;
 mod http;

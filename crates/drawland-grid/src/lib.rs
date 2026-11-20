@@ -21,6 +21,7 @@ pub mod place;
 pub mod raster;
 pub mod scene;
 pub mod text;
+pub mod ui;
 
 pub use bitmap::Bitmap;
 pub use scene::{Scene, View};

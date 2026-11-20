@@ -5,47 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>draw.land</title>
 <style>
-  :root {
-    --bg: #0c0c0c; --fg: #cfcfcf; --dim: #7a7a7a; --bar: #141414; --line: #262626;
-    --mono: ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", Consolas, monospace;
-  }
-  body.bitmap { --bg: #d9d7d0; --fg: #111; --dim: #6b6a65; --bar: #ecebe6; --line: #c9c7bf; }
+  :root { --mono: ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", Consolas, monospace; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 12px/1.4 var(--mono); }
-  body { display: flex; flex-direction: column; overflow: hidden; user-select: none; -webkit-user-select: none; }
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 8px 16px; background: var(--bar); border-bottom: 1px solid var(--line); }
-  header h1 { font-size: 12px; margin: 0; font-weight: 600; letter-spacing: .04em; }
-  header .group { display: flex; align-items: center; gap: 4px; }
-  header .label { color: var(--dim); margin-right: 2px; }
-  header .status { color: var(--dim); margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-variant-numeric: tabular-nums; }
-  button { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 3px; padding: 1px 7px; cursor: pointer; }
-  button:hover { border-color: var(--dim); }
-  button[aria-pressed="true"] { background: var(--fg); color: var(--bar); border-color: var(--fg); }
-  main { flex: 1; position: relative; overflow: hidden; cursor: grab; touch-action: none; }
+  html, body { margin: 0; height: 100%; background: #0c0c0c; overflow: hidden; }
+  body.bitmap { background: #fff; }
+  main { position: fixed; inset: 0; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
   main.dragging { cursor: grabbing; }
+  main.pointing { cursor: pointer; }
+  main.resting { cursor: default; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   #probe { position: absolute; visibility: hidden; white-space: pre; font-family: var(--mono); line-height: 1; }
-  @media (max-width: 600px) { header .status { margin-left: 0; } }
 </style>
 </head>
 <body>
-<header>
-  <h1 id="title"></h1>
-  <div class="group" id="sizes"></div>
-  <div class="group"><span class="label">size</span><button data-fit="window">window</button><button data-fit="screen"></button></div>
-  <div class="group"><span class="label">zoom</span><button data-zoom="1">+</button><button data-zoom="-1">−</button></div>
-  <div class="status" id="status"></div>
-</header>
-<main id="main"><canvas id="screen"></canvas><span id="probe"></span></main>
+<main id="main"><canvas id="map"></canvas><canvas id="chrome"></canvas><span id="probe"></span></main>
 <script>
+// The map moves under the interface: the map is a frame painted from the
+// scene (moved and scaled here until the next one comes), the interface a
+// picture of its own, laid out by the server from this page's state and
+// drawn in the same cells or pixels, with the zones a press acts on.
 const START = /*START*/null
 const R = 6378137
-const main = document.getElementById("main"), canvas = document.getElementById("screen"), statusEl = document.getElementById("status")
-const ctx = canvas.getContext("2d")
+const main = document.getElementById("main")
+const mapCanvas = document.getElementById("map"), chromeCanvas = document.getElementById("chrome")
+const ctx = mapCanvas.getContext("2d"), cctx = chromeCanvas.getContext("2d")
 const bitmap = START.kind === "bitmap"
 document.body.classList.add(START.kind)
-document.getElementById("title").textContent = START.title
-document.querySelector('[data-fit="screen"]').textContent = `${START.width}×${START.height}`
 
 const saved = (k, d) => { try { const v = localStorage.getItem(`drawland.${START.kind}.${k}`); return v === null ? d : JSON.parse(v) } catch { return d } }
 const save = (k, v) => { try { localStorage.setItem(`drawland.${START.kind}.${k}`, JSON.stringify(v)) } catch {} }
@@ -55,30 +40,30 @@ const save = (k, v) => { try { localStorage.setItem(`drawland.${START.kind}.${k}
 const state = { lat: START.lat, lng: START.lng, scale: START.scale }
 const fromHash = location.hash.slice(1).split(",").map(Number)
 if (fromHash.length === 3 && fromHash.every(Number.isFinite)) [state.lat, state.lng, state.scale] = fromHash
-// A bitmap pixel is `size` device pixels; a text cell is `size` CSS px of font.
-let size = saved("size", bitmap ? Math.max(1, Math.round(devicePixelRatio)) : 14)
-let fit = saved("fit", "window")
-const SIZES = bitmap ? [1, 2, 3, 4, 6, 8] : [10, 12, 14, 16, 20, 24]
-const FONT = getComputedStyle(document.getElementById("probe")).fontFamily
-
-const sizes = document.getElementById("sizes")
-sizes.innerHTML = `<span class="label">${bitmap ? "pixel" : "font"}</span>` +
-  SIZES.map(s => `<button data-size="${s}" title="${bitmap ? `a pixel is ${s} device pixel${s > 1 ? "s" : ""}` : `${s}px`}">${bitmap ? "×" + s : s}</button>`).join("")
-function pressed() {
-  for (const b of sizes.querySelectorAll("button")) b.setAttribute("aria-pressed", String(+b.dataset.size === size))
-  for (const b of document.querySelectorAll("[data-fit]")) b.setAttribute("aria-pressed", String(b.dataset.fit === fit))
+// The interface's state: the server lays it out from this.
+const ui = {
+  style: saved("style", START.style),
+  open: null,
+  column: saved("column", false),
+  theme: saved("theme", bitmap ? (START.invert ? "ink" : "paper") : "ink"),
+  // A bitmap pixel is `size` device pixels; a text cell is `size` CSS px of font.
+  size: saved("size", bitmap ? Math.max(1, Math.round(devicePixelRatio)) : 14),
+  fit: saved("fit", "window"),
 }
+const FONT = getComputedStyle(document.getElementById("probe")).fontFamily
+// On a bitmap the theme is the paper: ink is white on black.
+const inverted = () => bitmap && ui.theme === "ink"
 
 // ---- The grid: how many units the screen holds and how big one is ------
 
 let cellSize = null
 function cell() {
-  if (cellSize && cellSize.size === size) return cellSize
+  if (cellSize && cellSize.size === ui.size) return cellSize
   const probe = document.getElementById("probe")
-  probe.style.fontSize = size + "px"
+  probe.style.fontSize = ui.size + "px"
   probe.textContent = "M".repeat(100)
   const r = probe.getBoundingClientRect()
-  return (cellSize = { size, w: r.width / 100, h: r.height })
+  return (cellSize = { size: ui.size, w: r.width / 100, h: r.height })
 }
 
 // Units across and down, CSS px a unit (a character is one unit across, two
@@ -87,17 +72,17 @@ function grid() {
   const W = main.clientWidth, H = main.clientHeight
   let w, h, ux, uy, cw, ch
   if (bitmap) {
-    ux = uy = size / devicePixelRatio
+    ux = uy = ui.size / devicePixelRatio
     cw = ux; ch = uy
   } else {
     const c = cell()
     ux = c.w; uy = c.h / 2
     cw = c.w; ch = c.h
   }
-  w = fit === "screen" ? START.width : Math.max(4, Math.floor(W / cw))
-  h = fit === "screen" ? START.height : Math.max(2, Math.floor(H / ch))
+  w = ui.fit === "screen" ? START.width : Math.max(8, Math.floor(W / cw))
+  h = ui.fit === "screen" ? START.height : Math.max(4, Math.floor(H / ch))
   const cssW = w * cw, cssH = h * ch
-  return { w, h, ux, uy, cssW, cssH, x: Math.round((W - cssW) / 2), y: Math.round((H - cssH) / 2), W, H }
+  return { w, h, ux, uy, cw, ch, cssW, cssH, x: Math.round((W - cssW) / 2), y: Math.round((H - cssH) / 2), W, H }
 }
 
 // ---- Web Mercator: the page is the Mercator plane scaled at its centre --
@@ -132,18 +117,13 @@ function zoomAt(factor, cx, cy) {
   changed()
 }
 
-function ground() {
-  const m = state.scale / 1000, unit = bitmap ? "pixel" : "character"
-  return m >= 1000 ? `${(m / 1000).toFixed(1)} km a ${unit}` : m >= 10 ? `${m.toFixed(0)} m a ${unit}` : `${m.toFixed(1)} m a ${unit}`
-}
-
 // ---- Frames: asked one at a time, always for where the map is now -------
 
 // The last frame: its own canvas and the view it shows.
 let shown = null
-const paper = () => bitmap ? (START.invert ? "#000" : "#fff") : (shown?.bg || "#0c0c0c")
+const paper = () => bitmap ? (inverted() !== !!START.invert ? "#000" : "#fff") : (shown?.bg || "#0c0c0c")
 
-let inFlight = false, dirty = true, building = false, lastMs = 0
+let inFlight = false, dirty = true, building = false, lastMs = null, error = ""
 async function pump() {
   if (inFlight || !dirty) return
   dirty = false
@@ -152,7 +132,7 @@ async function pump() {
   const [mx, my] = mercator(at.lat, at.lng)
   const t0 = performance.now()
   try {
-    const r = await fetch(`/frame?lng=${at.lng}&lat=${at.lat}&scale=${at.scale}&w=${g.w}&h=${g.h}`)
+    const r = await fetch(`/frame?style=${encodeURIComponent(ui.style)}&lng=${at.lng}&lat=${at.lat}&scale=${at.scale}&w=${g.w}&h=${g.h}`)
     if (!r.ok) throw new Error(await r.text())
     building = r.headers.get("X-Scene") === "building"
     const frame = bitmap ? fromPbm(new Uint8Array(await r.arrayBuffer())) : fromRuns(await r.json(), g)
@@ -161,11 +141,14 @@ async function pump() {
     const [dx, dy] = (r.headers.get("X-Shift") || "0,0").split(",").map(Number)
     shown = { ...frame, mx, my, dx, dy, per: perUnit(at), ux: g.ux, uy: g.uy, cssW: g.cssW, cssH: g.cssH }
     lastMs = Math.round(performance.now() - t0)
+    error = ""
     draw()
   } catch (e) {
-    statusEl.textContent = String(e.message || e)
+    error = String(e.message || e).split("\n")[0]
   }
   inFlight = false
+  chromeDirty = true
+  pumpChrome()
   // A wider scene on its way: ask again once it may be there.
   if (building && !dirty) setTimeout(() => { dirty = true; pump() }, 150)
   pump()
@@ -183,10 +166,11 @@ function fromPbm(bytes) {
   i++
   const w = +fields[1], h = +fields[2], stride = Math.ceil(w / 8)
   const c = new OffscreenCanvas(w, h), cx = c.getContext("2d"), img = cx.createImageData(w, h), d = img.data
+  const flip = inverted()
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const v = bytes[i + y * stride + (x >> 3)] & (0x80 >> (x & 7)) ? 0 : 255
+    const black = !!(bytes[i + y * stride + (x >> 3)] & (0x80 >> (x & 7))) !== flip
     const o = (y * w + x) * 4
-    d[o] = d[o + 1] = d[o + 2] = v; d[o + 3] = 255
+    d[o] = d[o + 1] = d[o + 2] = black ? 0 : 255; d[o + 3] = 255
   }
   cx.putImageData(img, 0, 0)
   return { canvas: c, smooth: false }
@@ -197,21 +181,26 @@ function fromRuns(rows, g) {
   const width = Math.ceil(g.w * cw), height = Math.ceil(rows.length * ch)
   const off = new OffscreenCanvas(width, height), cx = off.getContext("2d")
   cx.fillStyle = "#0c0c0c"; cx.fillRect(0, 0, width, height)
-  cx.font = `${size * dpr}px ${FONT}`
-  cx.textBaseline = "middle"; cx.textAlign = "center"
   let bg0 = null
   rows.forEach((runs, y) => {
     let x = 0
     for (const [text, fg, bg] of runs) {
-      const chars = [...text]
-      if (bg) { cx.fillStyle = bg; cx.fillRect(Math.floor(x * cw), Math.floor(y * ch), Math.ceil(chars.length * cw) + 1, Math.ceil(ch) + 1) }
       if (bg0 === null) bg0 = bg
-      cx.fillStyle = fg || "#cccccc"
-      chars.forEach((t, i) => { if (t !== " ") cx.fillText(t, (x + i + 0.5) * cw, (y + 0.5) * ch) })
-      x += chars.length
+      x += cells(cx, text, fg, bg, x, y, cw, ch)
     }
   })
   return { canvas: off, smooth: true, bg: bg0 }
+}
+
+// A run of characters drawn a cell each from cell (x, y); the cells taken.
+function cells(cx, text, fg, bg, x, y, cw, ch) {
+  const chars = [...text]
+  if (bg) { cx.fillStyle = bg; cx.fillRect(Math.floor(x * cw), Math.floor(y * ch), Math.ceil(chars.length * cw) + 1, Math.ceil(ch) + 1) }
+  cx.font = `${ui.size * devicePixelRatio}px ${FONT}`
+  cx.textBaseline = "middle"; cx.textAlign = "center"
+  cx.fillStyle = fg || "#cccccc"
+  chars.forEach((t, i) => { if (t !== " ") cx.fillText(t, (x + i + 0.5) * cw, (y + 0.5) * ch) })
+  return chars.length
 }
 
 // The last frame drawn where the map is now: moved and scaled by what changed
@@ -221,12 +210,12 @@ function draw() {
   raf = 0
   const dpr = devicePixelRatio, g = grid()
   const W = Math.round(g.W * dpr), H = Math.round(g.H * dpr)
-  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H }
+  for (const c of [mapCanvas, chromeCanvas]) if (c.width !== W || c.height !== H) { c.width = W; c.height = H }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  ctx.clearRect(0, 0, g.W, g.H)
+  ctx.fillStyle = paper(); ctx.fillRect(0, 0, g.W, g.H)
+  document.body.style.background = paper()
   ctx.save()
   ctx.beginPath(); ctx.rect(g.x, g.y, g.cssW, g.cssH); ctx.clip()
-  ctx.fillStyle = paper(); ctx.fillRect(g.x, g.y, g.cssW, g.cssH)
   if (shown) {
     const per = perUnit(state), [mx, my] = mercator(state.lat, state.lng)
     const sx = shown.per / per * g.ux / shown.ux, sy = shown.per / per * g.uy / shown.uy
@@ -238,16 +227,11 @@ function draw() {
     ctx.drawImage(shown.canvas, snap(left), snap(top), shown.cssW * sx, shown.cssH * sy)
   }
   ctx.restore()
-  status()
-}
-
-let hashTimer = 0
-function status() {
-  const g = grid()
-  statusEl.textContent = `${state.lat.toFixed(5)}, ${state.lng.toFixed(5)} · ${ground()} · ${g.w}×${g.h} · ${lastMs} ms${building ? " · loading the area round it…" : ""}`
+  if (chrome) drawChrome()
   clearTimeout(hashTimer)
   hashTimer = setTimeout(() => history.replaceState(null, "", `#${state.lat.toFixed(5)},${state.lng.toFixed(5)},${Math.round(state.scale)}`), 300)
 }
+let hashTimer = 0
 
 function changed() {
   dirty = true
@@ -255,17 +239,150 @@ function changed() {
   pump()
 }
 
+// ---- The interface ------------------------------------------------------
+
+// The last chrome the server laid out: what it covers and its zones.
+let chrome = null, chromeDrawn = null
+let chromeInFlight = false, chromeDirty = true
+async function pumpChrome() {
+  if (chromeInFlight || !chromeDirty) return
+  chromeDirty = false
+  chromeInFlight = true
+  const g = grid()
+  const q = new URLSearchParams({
+    style: ui.style, open: ui.open || "", column: ui.column ? 1 : 0, theme: ui.theme, size: ui.size, fit: ui.fit,
+    lat: state.lat, lng: state.lng, scale: state.scale, w: g.w, h: g.h,
+    ms: lastMs ?? "", loading: building ? 1 : 0, error,
+  })
+  try {
+    const r = await fetch(`/chrome?${q}`)
+    if (r.ok) {
+      chrome = await r.json()
+      chrome.g = g
+      if (bitmap) chrome.planes = { cover: unbase64(chrome.cover), ink: unbase64(chrome.ink), stride: Math.ceil(chrome.w / 8) }
+      chromeDrawn = null
+      drawChrome()
+    }
+  } catch {}
+  chromeInFlight = false
+  pumpChrome()
+}
+
+function unbase64(s) { const b = atob(s), out = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) out[i] = b.charCodeAt(i); return out }
+
+// The chrome drawn over the map, fixed: drawn once a layout, kept as a canvas.
+function drawChrome() {
+  if (!chrome) return
+  const dpr = devicePixelRatio, g = grid()
+  if (!chromeDrawn) {
+    if (bitmap) {
+      const { w, h } = chrome, { cover, ink, stride } = chrome.planes
+      const c = new OffscreenCanvas(w, h), cx = c.getContext("2d"), img = cx.createImageData(w, h), d = img.data
+      const flip = inverted()
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const bit = 0x80 >> (x & 7), at = y * stride + (x >> 3)
+        if (!(cover[at] & bit)) continue
+        const black = !!(ink[at] & bit) !== flip
+        const o = (y * w + x) * 4
+        d[o] = d[o + 1] = d[o + 2] = black ? 0 : 255; d[o + 3] = 255
+      }
+      cx.putImageData(img, 0, 0)
+      chromeDrawn = { canvas: c, w: w * g.ux, h: h * g.uy }
+    } else {
+      const c = cell(), cw = c.w * dpr, ch = c.h * dpr
+      const off = new OffscreenCanvas(Math.ceil(chrome.cols * cw), Math.ceil(chrome.rows * ch)), cx = off.getContext("2d")
+      chrome.runs.forEach((runs, y) => {
+        let x = 0
+        for (const run of runs) x += run.length === 1 ? run[0] : cells(cx, run[0], run[1], run[2], x, y, cw, ch)
+      })
+      chromeDrawn = { canvas: off, w: chrome.cols * c.w, h: chrome.rows * c.h }
+    }
+  }
+  cctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  cctx.clearRect(0, 0, g.W, g.H)
+  cctx.imageSmoothingEnabled = false
+  cctx.drawImage(chromeDrawn.canvas, g.x, g.y, chromeDrawn.w, chromeDrawn.h)
+}
+
+// What the chrome has at CSS px (px, py): the zone's action, and whether it
+// covers the map there.
+function at(px, py) {
+  if (!chrome) return { action: null, covered: false }
+  const g = grid()
+  let cx, cy, covered
+  if (bitmap) {
+    const x = Math.floor((px - g.x) / g.ux), y = Math.floor((py - g.y) / g.uy)
+    if (x < 0 || y < 0 || x >= chrome.w || y >= chrome.h) return { action: null, covered: false }
+    covered = !!(chrome.planes.cover[y * chrome.planes.stride + (x >> 3)] & (0x80 >> (x & 7)))
+    cx = Math.min(Math.floor(x / chrome.cell[0]), chrome.cols - 1); cy = Math.min(Math.floor(y / chrome.cell[1]), chrome.rows - 1)
+  } else {
+    cx = Math.floor((px - g.x) / g.cw); cy = Math.floor((py - g.y) / g.ch)
+    if (cx < 0 || cy < 0 || cx >= chrome.cols || cy >= chrome.rows) return { action: null, covered: false }
+    let x = 0
+    covered = false
+    for (const run of chrome.runs[cy]) {
+      const n = run.length === 1 ? run[0] : [...run[0]].length
+      if (cx < x + n) { covered = run.length !== 1; break }
+      x += n
+    }
+  }
+  let action = null
+  for (const [x, y, w, h, a] of chrome.zones) if (cx >= x && cx < x + w && cy >= y && cy < y + h) action = a
+  return { action, covered }
+}
+
+// What a press does: the interface's own actions here, the map's after.
+function act(action) {
+  const [verb, ...rest] = action.split(":"), arg = rest.join(":")
+  const wasOpen = ui.open
+  ui.open = null
+  switch (verb) {
+    case "none": ui.open = wasOpen; return
+    case "open": ui.open = wasOpen === arg ? null : arg; break
+    case "column": ui.column = !ui.column; save("column", ui.column); break
+    case "theme": ui.theme = arg; save("theme", arg); shown = shown && bitmap ? null : shown; dirty = true; break
+    case "style": if (arg !== ui.style) { ui.style = arg; save("style", arg); dirty = true } break
+    case "size": ui.size = +arg; save("size", ui.size); cellSize = null; dirty = true; break
+    case "fit": ui.fit = arg; save("fit", arg); dirty = true; break
+    case "zoom": glide(+arg); break
+    case "link": window.open(arg, "_blank", "noopener"); break
+    case "edit": edit(); break
+    case "reload": fetch(`/reload?style=${encodeURIComponent(ui.style)}`).then(() => { dirty = true; pump() }); break
+  }
+  chromeDirty = true
+  changed()
+  pumpChrome()
+}
+
+function edit() {
+  window.open(`/edit?style=${encodeURIComponent(ui.style)}&theme=${encodeURIComponent(ui.theme)}&kind=${START.kind}`, `drawland-edit-${ui.style}`, "width=920,height=760")
+}
+
+// The editor says when it saved: the style is drawn anew.
+try {
+  new BroadcastChannel("drawland").onmessage = e => { if (e.data?.saved === ui.style) { dirty = true; pump() } }
+} catch {}
+
 // ---- Input -------------------------------------------------------------
 
 let drag = null
 main.addEventListener("pointerdown", e => {
   e.preventDefault()
+  const r = main.getBoundingClientRect(), hit = at(e.clientX - r.left, e.clientY - r.top)
+  if (hit.action) return act(hit.action)
+  if (hit.covered) return
+  if (ui.open) { ui.open = null; chromeDirty = true; pumpChrome() }
   drag = { x: e.clientX, y: e.clientY }
   main.setPointerCapture(e.pointerId)
   main.classList.add("dragging")
 })
 main.addEventListener("pointermove", e => {
-  if (!drag) return
+  if (!drag) {
+    const r = main.getBoundingClientRect(), hit = at(e.clientX - r.left, e.clientY - r.top)
+    main.classList.toggle("pointing", !!hit.action && hit.action !== "none")
+    main.classList.toggle("resting", !hit.action && hit.covered)
+    return
+  }
   pan(e.clientX - drag.x, e.clientY - drag.y)
   drag = { x: e.clientX, y: e.clientY }
 })
@@ -297,12 +414,16 @@ function glide(steps) {
   requestAnimationFrame(step)
 }
 
+const MOVES = { ArrowLeft: [1, 0], h: [1, 0], ArrowRight: [-1, 0], l: [-1, 0], ArrowUp: [0, 1], k: [0, 1], ArrowDown: [0, -1], j: [0, -1] }
+const KEYS = { s: "open:style", t: "open:theme", f: "open:size", p: "column", "\\": "column", e: "edit" }
 const held = new Set()
 addEventListener("keydown", e => {
-  const dir = { ArrowLeft: [1, 0], h: [1, 0], a: [1, 0], ArrowRight: [-1, 0], l: [-1, 0], d: [-1, 0], ArrowUp: [0, 1], k: [0, 1], w: [0, 1], ArrowDown: [0, -1], j: [0, -1], s: [0, -1] }[e.key]
-  if (dir) { e.preventDefault(); if (!held.size) requestAnimationFrame(glideKeys); held.add(e.key); return }
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  if (MOVES[e.key]) { e.preventDefault(); if (!held.size) requestAnimationFrame(glideKeys); held.add(e.key); return }
   if (e.key === "+" || e.key === "=") glide(1)
   else if (e.key === "-" || e.key === "_") glide(-1)
+  else if (e.key === "Escape" && ui.open) { ui.open = null; chromeDirty = true; pumpChrome() }
+  else if (KEYS[e.key]) act(KEYS[e.key])
 })
 addEventListener("keyup", e => held.delete(e.key))
 addEventListener("blur", () => held.clear())
@@ -314,27 +435,14 @@ function glideKeys(now) {
   lastKey = now
   const g = grid(), v = Math.min(g.W, g.H) * 0.6 * dt
   let dx = 0, dy = 0
-  for (const k of held) {
-    const d = { ArrowLeft: [1, 0], h: [1, 0], a: [1, 0], ArrowRight: [-1, 0], l: [-1, 0], d: [-1, 0], ArrowUp: [0, 1], k: [0, 1], w: [0, 1], ArrowDown: [0, -1], j: [0, -1], s: [0, -1] }[k]
-    if (d) { dx += d[0]; dy += d[1] }
-  }
+  for (const k of held) { const d = MOVES[k]; if (d) { dx += d[0]; dy += d[1] } }
   pan(dx * v, dy * v)
   requestAnimationFrame(glideKeys)
 }
 
-document.addEventListener("click", e => {
-  const b = e.target.closest("button")
-  if (!b) return
-  if (b.dataset.zoom) return glide(+b.dataset.zoom)
-  if (b.dataset.size) { size = +b.dataset.size; save("size", size) }
-  if (b.dataset.fit) { fit = b.dataset.fit; save("fit", fit) }
-  pressed()
-  changed()
-})
-
-addEventListener("resize", changed)
-pressed()
+addEventListener("resize", () => { chromeDirty = true; changed(); pumpChrome() })
 changed()
+pumpChrome()
 </script>
 </body>
 </html>

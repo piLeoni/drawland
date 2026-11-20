@@ -81,8 +81,10 @@ enum Command {
         #[arg(long, conflicts_with = "offline")]
         refresh: bool,
     },
-    /// Move round a screen profile's map in the terminal: arrows (or h j k
-    /// l) move, + and - zoom, q quits. The screen is the terminal's size.
+    /// Move round a screen profile's map in the terminal, its interface
+    /// drawn in characters: arrows (or h j k l) and a drag move, + - and the
+    /// wheel zoom, s picks a style, t a theme, p opens the panel, e edits
+    /// the style in $EDITOR, q quits. The screen is the terminal's size.
     View {
         /// A profile whose output is a screen (`output({ screen: … })`).
         profile: PathBuf,
@@ -98,9 +100,10 @@ enum Command {
         #[arg(long)]
         offline: bool,
     },
-    /// Show a screen profile's map in a web page on this machine: drag,
-    /// arrows and the wheel move it; a bitmap's pixels can be made bigger
-    /// for a sharp screen. One profile a port: run one for each.
+    /// Show a screen profile's map in a web page on this machine, its
+    /// interface drawn in the screen's own cells or pixels: drag, arrows and
+    /// the wheel move it; the styles beside it of the same kind are in its
+    /// menu, each editable in the page. One kind a port: run one for each.
     Serve {
         /// A profile whose output is a screen (`output({ screen: … })`).
         profile: PathBuf,
@@ -147,7 +150,7 @@ where
         }
         Command::View { profile, address, lat, lng, cache, offline } => {
             let drawer = Drawer::new(Settings { cache, offline, refresh: false });
-            let result = profile_at(&profile).and_then(|p| crate::view::run(&drawer, &p, &Place { address, lat, lng }));
+            let result = crate::view::run(&drawer, &profile, &Place { address, lat, lng });
             return match result {
                 Ok(()) => 0,
                 Err(e) => {
@@ -158,7 +161,7 @@ where
         }
         Command::Serve { profile, port, address, lat, lng, cache, offline } => {
             let drawer = Drawer::new(Settings { cache, offline, refresh: false });
-            let result = profile_at(&profile).and_then(|p| crate::serve::run(&drawer, &p, &Place { address, lat, lng }, port));
+            let result = crate::serve::run(&drawer, &profile, &Place { address, lat, lng }, port);
             return match result {
                 Ok(()) => 0,
                 Err(e) => {
