@@ -3,19 +3,19 @@ members = ["crates/drawland-core", "crates/drawland-graph", "crates/drawland-gri
 resolver = "2"
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.2"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/piLeoni/drawland"
 homepage = "https://draw.land"
 
 [workspace.dependencies]
-drawland-core = { path = "crates/drawland-core", version = "0.3.0" }
-drawland-graph = { path = "crates/drawland-graph", version = "0.3.0" }
-drawland-grid = { path = "crates/drawland-grid", version = "0.3.0" }
-drawland-ts = { path = "crates/drawland-ts", version = "0.3.0" }
-drawland-script = { path = "crates/drawland-script", version = "0.3.0" }
-drawland = { path = "crates/drawland", version = "0.3.0" }
+drawland-core = { path = "crates/drawland-core", version = "0.3.2" }
+drawland-graph = { path = "crates/drawland-graph", version = "0.3.2" }
+drawland-grid = { path = "crates/drawland-grid", version = "0.3.2" }
+drawland-ts = { path = "crates/drawland-ts", version = "0.3.2" }
+drawland-script = { path = "crates/drawland-script", version = "0.3.2" }
+drawland = { path = "crates/drawland", version = "0.3.2" }
 penfill = { path = "../penfill", version = "0.4.0", default-features = false }
 # Pen-and-ink terrain drawing: its own engine, its own expression trees.
 burin-map-core = { path = "../burin-map/crates/burin-map-core", version = "0.1.0" }

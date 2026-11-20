@@ -793,7 +793,7 @@ checksum = "fd8e701084c37e7ef62d3f9e453b618130cbc0ef3573847785952a3ac3f746bf"
 
 [[package]]
 name = "drawland"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "clap",
  "drawland-core",
@@ -811,14 +811,14 @@ dependencies = [
 
 [[package]]
 name = "drawland-cli"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "drawland",
 ]
 
 [[package]]
 name = "drawland-core"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "approx",
  "burin-map-core",
@@ -843,7 +843,7 @@ dependencies = [
 
 [[package]]
 name = "drawland-graph"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "drawland-core",
  "serde_json",
@@ -851,7 +851,7 @@ dependencies = [
 
 [[package]]
 name = "drawland-grid"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "deunicode",
  "drawland-core",
@@ -861,7 +861,7 @@ dependencies = [
 
 [[package]]
 name = "drawland-node"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "drawland",
  "napi",
@@ -872,7 +872,7 @@ dependencies = [
 
 [[package]]
 name = "drawland-python"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "drawland",
  "pyo3",
@@ -881,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "drawland-script"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "boa_engine",
  "burin-map-script",
@@ -895,7 +895,7 @@ dependencies = [
 
 [[package]]
 name = "drawland-ts"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "swc_common",
  "swc_ts_fast_strip",
