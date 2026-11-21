@@ -27,6 +27,8 @@ pub struct Ui {
     pub fit_screen: bool,
     /// On a globe, names run on past the rim instead of being cut by it.
     pub names_past_rim: bool,
+    /// The rows the column is scrolled by.
+    pub scroll: usize,
 }
 
 impl Ui {
@@ -39,6 +41,7 @@ impl Ui {
             size: None,
             fit_screen: false,
             names_past_rim: false,
+            scroll: 0,
         }
     }
 
@@ -56,6 +59,8 @@ impl Ui {
             "size" => self.size = arg.parse().ok(),
             "fit" => self.fit_screen = arg == "screen",
             "rim" => self.names_past_rim = arg == "over",
+            // Relative, rows: held to what the column has when it is laid out.
+            "scroll" => self.scroll = self.scroll.saturating_add_signed(arg.parse().unwrap_or(0)),
             "none" => {
                 self.open = menu_was_open;
                 return true;
@@ -282,6 +287,7 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
         right: vec![Button::new("GitHub ↗", format!("link:{REPO}"))],
         open: ui.open.clone(),
         column,
+        scroll: ui.scroll,
         tools: vec![Button::new("+", "zoom:1"), Button::new("−", "zoom:-1"), Button::new("≡", "column")],
         status,
         keys,

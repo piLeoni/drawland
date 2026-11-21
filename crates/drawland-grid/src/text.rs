@@ -30,8 +30,9 @@ enum Kind {
     Ascii(u8),
 }
 
-/// Space round a globe, and its stars.
+/// Space round a globe at night, and its stars; round a day's, paper.
 pub const SPACE: Rgb = Rgb(0, 0, 0);
+pub const DAY: Rgb = Rgb(0xf7, 0xf5, 0xf0);
 const STAR: Rgb = Rgb(0x8a, 0x92, 0xa6);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -138,11 +139,17 @@ impl Text {
         }
     }
 
-    /// The cell at `(x, y)` made space: black, with a star or none.
-    pub fn space(&mut self, x: usize, y: usize, star: Option<char>) {
+    /// The cell at `(x, y)` made space: `sky`, with a star or none.
+    pub fn space(&mut self, x: usize, y: usize, sky: Rgb, star: Option<char>) {
         if let Some(cell) = self.at(x as i64, y as i64) {
-            *cell = Cell { kind: star.map_or(Kind::Blank, Kind::Char), fg: Some(STAR), bg: Some(SPACE) };
+            *cell = Cell { kind: star.map_or(Kind::Blank, Kind::Char), fg: Some(STAR), bg: Some(sky) };
         }
+    }
+
+    /// Whether the map is a night's: its cells' grounds dark on the whole.
+    pub fn night(&self) -> bool {
+        let lums: Vec<f64> = self.cells.iter().filter_map(|c| c.bg).map(|c| 0.2126 * c.0 as f64 + 0.7152 * c.1 as f64 + 0.0722 * c.2 as f64).collect();
+        lums.is_empty() || lums.iter().sum::<f64>() / (lums.len() as f64) < 128.0
     }
 
     /// The cell at `(x, y)` set.

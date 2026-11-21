@@ -422,6 +422,7 @@ fn chrome(styles: &Styles, q: &Query) -> Result<Reply, String> {
     ui.size = q.get("size").and_then(|s| s.parse().ok());
     ui.fit_screen = q.get("fit").as_deref() == Some("screen");
     ui.names_past_rim = q.get("rim").as_deref() == Some("over");
+    ui.scroll = q.number("scroll").unwrap_or(0.0).max(0.0) as usize;
     let (w, h) = ((q.number("w")? as usize).clamp(1, 4096), (q.number("h")? as usize).clamp(1, 4096));
     let error = q.get("error").filter(|e| !e.is_empty());
     let now = Now {
@@ -458,7 +459,7 @@ fn chrome(styles: &Styles, q: &Query) -> Result<Reply, String> {
                         .collect()
                 })
                 .collect();
-            serde_json::json!({ "cols": w, "rows": h, "cell": [1, 1], "free": laid.free, "runs": rows, "zones": zones(&laid) })
+            serde_json::json!({ "cols": w, "rows": h, "cell": [1, 1], "free": laid.free, "scroll": laid.scroll, "runs": rows, "zones": zones(&laid) })
         }
         ScreenKind::Bitmap => {
             let font = bitmap_font(h);
@@ -483,6 +484,7 @@ fn chrome(styles: &Styles, q: &Query) -> Result<Reply, String> {
                 "cols": cols, "rows": rows, "cell": [font.width, font.height], "w": w, "h": h,
                 // Pixels across left of the column.
                 "free": if laid.free < cols { laid.free * font.width } else { w },
+                "scroll": laid.scroll,
                 "cover": base64(&cover), "ink": base64(&ink), "zones": zones(&laid),
             })
         }

@@ -102,9 +102,10 @@ impl Picture {
         }
     }
 
-    /// A globe's picture (an `ortho` output) with space past its rim: black,
-    /// a few stars, the rim drawn (white on a bitmap, a grey Braille ring on
-    /// text). The globe is `radius` units round the screen's centre. With
+    /// A globe's picture (an `ortho` output) with space past its rim: on a
+    /// night map (an inverted bitmap, text on a dark ground) black with a
+    /// few stars, the rim white on a bitmap; on a day map paper, the rim
+    /// black (a grey Braille ring on text either way). The globe is `radius` units round the screen's centre. With
     /// `names` (the same screen's names painted alone), the names run on
     /// past the rim, white on the black, instead of being cut by it, and
     /// the rim gives way to them.
@@ -123,18 +124,19 @@ impl Picture {
                     (x.saturating_sub(1)..=(x + 1).min(w - 1)).any(|i| (y.saturating_sub(1)..=(y + 1).min(h - 1)).any(|j| ink(i, j)))
                 };
                 // `put` takes the pixel before the screen's inversion: shown
-                // black is `!invert`.
+                // black is `!invert`. An inverted screen is a night's.
                 let invert = b.invert;
+                let night = invert;
                 let shown = |black: bool| black != invert;
                 let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
                 for y in 0..h {
                     for x in 0..w {
                         let d = (x as f64 + 0.5 - cx).hypot(y as f64 + 0.5 - cy);
                         if d > radius + 0.5 {
-                            let white = ink(x, y) || star(x, y, 211);
-                            b.put(x, y, shown(!white));
+                            let lit = ink(x, y) || (night && star(x, y, 211));
+                            b.put(x, y, shown(lit != night));
                         } else if d > radius - 0.5 && !near(x, y) {
-                            b.put(x, y, shown(false));
+                            b.put(x, y, shown(!night));
                         }
                     }
                 }
@@ -146,16 +148,19 @@ impl Picture {
                 };
                 // A cell is one unit across and two down.
                 let (cx, cy) = (t.width as f64 / 2.0, t.height as f64);
+                // Night or day: the map's ground, dark or light.
+                let night = t.night();
+                let sky = if night { text::SPACE } else { text::DAY };
                 for y in 0..t.height {
                     for x in 0..t.width {
                         let d = (x as f64 + 0.5 - cx).hypot((y as f64 + 0.5) * 2.0 - cy);
                         if d > radius + 0.5 {
                             match names.map(|n| *n.cell(x, y)).filter(|c| c.char() != ' ') {
                                 Some(mut c) => {
-                                    c.bg = Some(text::SPACE);
+                                    c.bg = Some(sky);
                                     t.put(x, y, c);
                                 }
-                                None => t.space(x, y, star(x, y, 61).then(|| if star(x, y, 7) { '+' } else { '·' })),
+                                None => t.space(x, y, sky, (night && star(x, y, 61)).then(|| if star(x, y, 7) { '+' } else { '·' })),
                             }
                         }
                     }

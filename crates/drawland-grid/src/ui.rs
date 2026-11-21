@@ -39,6 +39,8 @@ pub enum Role {
     Brand,
     /// The divider between the choices of one segmented control.
     Seam,
+    /// The column's ground, under its cards: a pixel pattern on 1 bit.
+    Ground,
 }
 
 impl Role {
@@ -114,6 +116,8 @@ pub struct Model {
     pub open: Option<String>,
     /// The column's lines, when it is open.
     pub column: Option<Vec<Line>>,
+    /// The rows the column is scrolled by (held to what it has).
+    pub scroll: usize,
     /// Floating top right while the column is closed.
     pub tools: Vec<Button>,
     /// The status line: what is shown, in segments.
@@ -143,6 +147,22 @@ pub struct Chrome {
     /// The cells across left of the column, where the map is (all of them
     /// while it is shut).
     pub free: usize,
+    /// The rows the column is scrolled by, held to what it has.
+    pub scroll: usize,
+    /// The column's cards, in cells, as they show.
+    pub cards: Vec<Card>,
+}
+
+/// A card on the column's ground, in cells; cut by the view's edge at its
+/// top or bottom when it runs past it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Card {
+    pub x: usize,
+    pub y: usize,
+    pub w: usize,
+    pub h: usize,
+    pub open_top: bool,
+    pub open_bottom: bool,
 }
 
 /// The column's width in cells on a screen `width` across.
@@ -153,7 +173,7 @@ fn column_width(width: usize) -> usize {
 impl Chrome {
     /// `model` laid out on `width` × `height` cells.
     pub fn lay(model: &Model, width: usize, height: usize) -> Chrome {
-        let mut c = Chrome { width, height, cells: vec![None; width * height], zones: Vec::new(), free: width };
+        let mut c = Chrome { width, height, cells: vec![None; width * height], zones: Vec::new(), free: width, scroll: 0, cards: Vec::new() };
         if width == 0 || height == 0 {
             return c;
         }
@@ -162,7 +182,7 @@ impl Chrome {
             c.status(model);
         }
         match &model.column {
-            Some(lines) if height >= 4 => c.column(lines),
+            Some(lines) if height >= 4 => c.column(lines, model.scroll),
             _ if height >= 5 => c.tools(&model.tools),
             _ => {}
         }
@@ -364,66 +384,137 @@ impl Chrome {
         }
     }
 
-    /// The column: a header with its close button, then its lines.
-    fn column(&mut self, lines: &[Line]) {
+    /// The column: a header with its close button, then its sections, each
+    /// a card on the column's ground, scrolled by `scroll` rows when they
+    /// are more than it holds, a scrollbar at its right edge then.
+    fn column(&mut self, lines: &[Line], scroll: usize) {
         let cw = column_width(self.width);
         let x0 = self.width - cw;
         self.free = x0;
         let (top, bottom) = (1, self.height - 1);
-        self.fill(x0, top, cw, bottom - top, Role::Panel);
+        self.fill(x0, top, cw, bottom - top, Role::Ground);
         for y in top..bottom {
-            self.put(x0, y, '│', Role::Rule);
+            self.put(x0, y, '│', Role::Ground);
         }
         self.zone(x0, top, cw, bottom - top, "none");
-        let (left, end) = (x0 + 2, self.width - 1);
-        // The header: what it is, and × to close it.
-        self.write(left, top, "settings", Role::Dim, end);
+        // The header, fixed: what it is, and × to close it.
+        self.fill(x0 + 1, top, cw - 1, 1, Role::Panel);
+        self.write(x0 + 2, top, "settings", Role::Dim, self.width - 1);
         self.button(self.width - 4, top, &Button::new("×", "column"), Role::Panel, self.width);
-        let key = lines.iter().filter_map(|l| if let Line::Key(k, _) = l { Some(k.chars().count()) } else { None }).max().unwrap_or(0);
-        let mut y = top + 2;
-        for line in lines {
-            if y >= bottom {
-                break;
+        // The sections laid out whole on a sheet, then the part in view.
+        let sheet = Chrome::sheet(lines, self.width, x0);
+        let (view_top, view) = (top + 2, bottom.saturating_sub(top + 2));
+        let most = sheet.height.saturating_sub(view);
+        self.scroll = scroll.min(most);
+        for vy in self.scroll..(self.scroll + view).min(sheet.height) {
+            let y = view_top + vy - self.scroll;
+            for x in x0 + 1..self.width {
+                if let Some(c) = sheet.cell(x, vy) {
+                    self.cells[y * self.width + x] = Some(c);
+                }
             }
+        }
+        for z in &sheet.zones {
+            let (z0, z1) = (z.y.max(self.scroll), (z.y + z.h).min(self.scroll + view));
+            if z0 < z1 {
+                self.zone(z.x, view_top + z0 - self.scroll, z.w, z1 - z0, &z.action);
+            }
+        }
+        for c in &sheet.cards {
+            let (c0, c1) = (c.y as isize - self.scroll as isize, (c.y + c.h) as isize - self.scroll as isize);
+            if c1 > 0 && c0 < view as isize {
+                // Cut where it leaves the view: its edge there is the view's.
+                let (a, b) = (c0.max(0) as usize, (c1 as usize).min(view));
+                self.cards.push(Card { x: c.x, y: view_top + a, w: c.w, h: b - a, open_top: c0 < 0, open_bottom: c1 as usize > view });
+            }
+        }
+        // The scrollbar: a track at the edge, the thumb where the view is;
+        // a press above or below it turns a page.
+        if most > 0 && view > 2 {
+            let x = self.width - 1;
+            let thumb = (view * view / sheet.height).max(1);
+            let at = (self.scroll * (view - thumb)).div_ceil(most.max(1)).min(view - thumb);
+            for i in 0..view {
+                let on = (at..at + thumb).contains(&i);
+                self.put(x, view_top + i, if on { '█' } else { '│' }, if on { Role::Dim } else { Role::Ground });
+            }
+            self.zone(x, view_top, 1, at, &format!("scroll:-{view}"));
+            self.zone(x, view_top + at + thumb, 1, view - at - thumb, &format!("scroll:{view}"));
+        }
+    }
+
+    /// The column's sections as cards, laid out on a sheet as tall as they
+    /// need, `x0` the column's left.
+    fn sheet(lines: &[Line], width: usize, x0: usize) -> Chrome {
+        let mut s = Chrome { width, height: 2000, cells: vec![None; width * 2000], zones: Vec::new(), free: width, scroll: 0, cards: Vec::new() };
+        // A card a cell in from the column's sides, its text a cell further.
+        let (card_x, card_w) = (x0 + 2, width.saturating_sub(x0 + 4));
+        let (left, end) = (card_x + 2, card_x + card_w - 1);
+        let key = lines.iter().filter_map(|l| if let Line::Key(k, _) = l { Some(k.chars().count()) } else { None }).max().unwrap_or(0);
+        let mut y = 0;
+        let mut card: Option<usize> = None;
+        let close = |s: &mut Chrome, card: &mut Option<usize>, y: &mut usize| {
+            if let Some(from) = card.take() {
+                // A blank row closes the card; another, the ground, parts it
+                // from the next.
+                s.fill(card_x, *y, card_w, 1, Role::Panel);
+                *y += 1;
+                s.cards.push(Card { x: card_x, y: from, w: card_w, h: *y - from, open_top: false, open_bottom: false });
+                *y += 1;
+            }
+        };
+        for line in lines {
+            if let Line::Head(_) = line {
+                close(&mut s, &mut card, &mut y);
+                card = Some(y);
+            }
+            let row = |s: &mut Chrome, y: usize| s.fill(card_x, y, card_w, 1, Role::Panel);
             match line {
                 Line::Head(t) => {
-                    let n = self.write(left, y, &t.to_uppercase(), Role::Dim, end);
+                    row(&mut s, y);
+                    let n = s.write(left, y, &t.to_uppercase(), Role::Dim, end);
                     for x in left + n + 1..end {
-                        self.put(x, y, '─', Role::Rule);
+                        s.put(x, y, '─', Role::Rule);
                     }
                 }
                 Line::Text(t) => {
-                    self.write(left, y, t, Role::Panel, end);
+                    row(&mut s, y);
+                    s.write(left, y, t, Role::Panel, end);
                 }
                 Line::Dim(t) => {
-                    self.write(left, y, t, Role::Dim, end);
+                    row(&mut s, y);
+                    s.write(left, y, t, Role::Dim, end);
                 }
                 Line::Key(k, d) => {
-                    self.write(left, y, k, Role::Accent, end);
-                    self.write(left + key + 2, y, d, Role::Dim, end);
+                    row(&mut s, y);
+                    s.write(left, y, k, Role::Accent, end);
+                    s.write(left + key + 2, y, d, Role::Dim, end);
                 }
                 Line::Row(buttons) => {
                     // One segmented control, wrapped where it is too wide.
+                    row(&mut s, y);
                     let mut x = left;
                     for b in buttons {
                         let n = b.label.chars().count() + 2;
                         if x > left && x + 1 + n > end {
+                            row(&mut s, y + 1);
                             y += 2;
+                            row(&mut s, y);
                             x = left;
-                            if y >= bottom {
-                                break;
-                            }
                         }
                         if x > left {
-                            x += self.write(x, y, "│", Role::Seam, end);
+                            x += s.write(x, y, "│", Role::Seam, end);
                         }
-                        x += self.button(x, y, b, Role::Button, end);
+                        x += s.button(x, y, b, Role::Button, end);
                     }
                 }
-                Line::Blank => {}
+                Line::Blank => row(&mut s, y),
             }
             y += 1;
         }
+        close(&mut s, &mut card, &mut y);
+        s.height = y;
+        s
     }
 
     /// The tools, in a box top right, while the column is closed.
@@ -508,16 +599,18 @@ impl Palette {
         self.mix(0.08)
     }
 
+    /// Cards, menus and the tools' box.
     fn panel(&self) -> Rgb {
-        self.mix(0.04)
+        self.mix(0.09)
     }
 
     /// A role's ink and paper, on the column.
     pub fn colours(&self, role: Role) -> (Rgb, Rgb) {
         match role {
             Role::Bar => (self.mix(0.92), self.bar()),
-            Role::Button => (self.mix(0.92), self.mix(0.15)),
-            Role::Seam => (self.mix(0.32), self.mix(0.15)),
+            Role::Button => (self.mix(0.92), self.mix(0.2)),
+            Role::Seam => (self.mix(0.4), self.mix(0.2)),
+            Role::Ground => (self.mix(0.3), self.mix(0.02)),
             Role::On => (self.paper, self.ink),
             Role::Panel => (self.ink, self.panel()),
             Role::Dim => (self.mix(0.5), self.panel()),
@@ -568,8 +661,13 @@ impl<'a> Pixels<'a> {
         let ink = glyph(self.font, ch, x, y);
         // The bar's rule under it and the status line's over it.
         let edge = (cy == 0 && py == fh - 1 && c.height > 1) || (cy + 1 == c.height && cy > 0 && py == cy * fh);
+        if let Some(black) = self.card_edge(px, py) {
+            return Some(black);
+        }
         Some(match role {
             Role::On | Role::Brand => !ink,
+            // The column's ground: one pixel in eight, staggered row to row.
+            Role::Ground => ink || (py % 2 == 0 && (px + py / 2 * 2) % 4 == 0),
             // A control is framed, the frame broken where a letter's tail
             // reaches it and its corners rounded; the chosen one inverse.
             Role::Button | Role::Seam if cy > 0 => ink || self.frame(cx, cy, x, y),
@@ -579,6 +677,32 @@ impl<'a> Pixels<'a> {
             // dither of a 6 × 12 glyph cannot be read).
             _ => ink || edge,
         })
+    }
+
+    /// A card's frame (`Some(true)`), the paper just inside it
+    /// (`Some(false)`, so no glyph touches the frame), or its shadow (two
+    /// pixels down and right, `Some(true)`); `None` elsewhere.
+    fn card_edge(&self, px: usize, py: usize) -> Option<bool> {
+        let (fw, fh) = (self.font.width, self.font.height);
+        for c in &self.chrome.cards {
+            let (x0, y0, x1, y1) = (c.x * fw, c.y * fh, (c.x + c.w) * fw, (c.y + c.h) * fh);
+            let inside = (x0..x1).contains(&px) && (y0..y1).contains(&py);
+            if inside {
+                let side = px == x0 || px + 1 == x1;
+                let top = py == y0 && !c.open_top;
+                let bottom = py + 1 == y1 && !c.open_bottom;
+                if side || top || bottom {
+                    return Some(true);
+                }
+                continue;
+            }
+            let right = (x1..x1 + 2).contains(&px) && py >= y0 + 3 && (py < y1 + 2 || c.open_bottom) && py < y1 + 2;
+            let below = !c.open_bottom && (y1..y1 + 2).contains(&py) && px >= x0 + 3 && px < x1 + 2;
+            if right || below {
+                return Some(true);
+            }
+        }
+        None
     }
 
     /// Whether `(x, y)` in cell `(cx, cy)` is on its control's frame.
@@ -628,6 +752,7 @@ fn glyph(font: &Font, ch: char, x: usize, y: usize) -> bool {
             let (cx, cy, r) = (w / 2.0, h * 0.5, w * 0.3);
             ((fx - cx).abs() - (fy - cy).abs()).abs() < 0.6 && (fx - cx).abs() <= r
         }
+        '█' if !font.has(ch) => true,
         '·' if !font.has(ch) => (fx - w / 2.0).abs() < 0.6 && (fy - h * 0.5).abs() < 0.6,
         '•' if !font.has(ch) => (fx - w / 2.0).hypot((fy - h * 0.55) * 1.0) <= w * 0.28,
         '↗' if !font.has(ch) => {
@@ -667,6 +792,7 @@ mod tests {
             right: vec![Button::new("GitHub ↗", "link:https://github.com/piLeoni/drawland")],
             open: None,
             column: None,
+            scroll: 0,
             tools: vec![Button::new("+", "zoom:1"), Button::new("−", "zoom:-1"), Button::new("≡", "column")],
             status: vec!["45.43750, 12.33580".into(), "8 m a character".into()],
             keys: vec![("s".into(), "style".into()), ("p".into(), "panel".into())],
@@ -718,14 +844,33 @@ mod tests {
         m.column = Some(vec![Line::Head("screen".into()), Line::Row(vec![Button::new("10", "size:10"), Button::new("12", "size:12").on(true)])]);
         let c = Chrome::lay(&m, 90, 30);
         let x0 = 90 - column_width(90);
-        assert_eq!(c.cell(x0, 5), Some(('│', Role::Rule)));
+        assert_eq!(c.cell(x0, 5), Some(('│', Role::Ground)));
+        assert_eq!(c.cards.len(), 1, "the section a card");
         assert!(row(&c, 1).contains("settings") && row(&c, 1).contains(" × "), "{}", row(&c, 1));
         assert_eq!(c.hit(89 - 2, 1), Some("column"), "× closes it");
         assert!(row(&c, 3).contains("SCREEN ──"), "{}", row(&c, 3));
         assert!(row(&c, 4).contains(" 10 │ 12 "), "one segmented control: {}", row(&c, 4));
         assert_eq!(c.cell(col(&c, 4, "│ 12"), 4), Some(('│', Role::Seam)));
         assert!(c.zones.iter().all(|z| z.action != "column" || z.y == 1), "no floating tools");
-        assert_eq!(c.hit(x0 + 3, 4), Some("size:10"));
+        assert_eq!(c.hit(x0 + 5, 4), Some("size:10"));
+    }
+
+    #[test]
+    fn a_long_column_scrolls_and_holds_to_what_it_has() {
+        let mut m = model();
+        m.column = Some((0..12).flat_map(|i| vec![Line::Head(format!("part {i}")), Line::Text("words".into()), Line::Row(vec![Button::new("a", format!("a:{i}"))])]).collect());
+        m.scroll = 10_000;
+        let c = Chrome::lay(&m, 90, 20);
+        // Twelve cards of five rows (title, words, choice, closing row, gap):
+        // the last row in view is the last card's closing row.
+        assert!(c.scroll > 0 && c.scroll < 10_000, "held: {}", c.scroll);
+        assert!((0..20).any(|y| row(&c, y).contains("PART 11")), "the end in view");
+        assert!(!(0..20).any(|y| row(&c, y).contains("PART 0 ")), "the start scrolled off");
+        assert_eq!(c.cell(89, 18).map(|(_, r)| r), Some(Role::Dim), "the thumb at the bottom");
+        // A press on the track above the thumb turns a page back.
+        assert!(c.hit(89, 4).is_some_and(|a| a.starts_with("scroll:-")));
+        // A card cut by the view's top is open there.
+        assert!(c.cards.first().is_some_and(|k| k.open_top || k.y > 3));
     }
 
     #[test]

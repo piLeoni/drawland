@@ -53,6 +53,8 @@ const ui = {
   fit: saved("fit", "window"),
   // On a globe, names cut at the rim ("cut") or running on past it ("over").
   rim: saved("rim", "cut"),
+  // Rows the column is scrolled by; the server holds it to what it has.
+  scroll: 0,
 }
 // Settings from the address (`?column=1&theme=ink&style=…`) win over the
 // browser's: a link shows what its sender saw.
@@ -340,7 +342,7 @@ async function pumpChrome() {
   chromeInFlight = true
   const g = grid()
   const q = new URLSearchParams({
-    style: ui.style, open: ui.open || "", column: ui.column ? 1 : 0, theme: ui.theme, size: ui.size, fit: ui.fit, rim: ui.rim,
+    style: ui.style, open: ui.open || "", column: ui.column ? 1 : 0, theme: ui.theme, size: ui.size, fit: ui.fit, rim: ui.rim, scroll: ui.scroll,
     lat: state.lat, lng: state.lng, scale: state.scale, w: g.w, h: g.h,
     ms: lastMs ?? "", loading: building ? 1 : 0, error,
   })
@@ -349,6 +351,7 @@ async function pumpChrome() {
     if (r.ok) {
       const free = chrome?.free
       chrome = await r.json()
+      ui.scroll = chrome.scroll ?? 0
       chrome.g = g
       // The column opened or shut: the map takes the room it leaves.
       if (chrome.free !== free) changed()
@@ -438,6 +441,7 @@ function act(action) {
     case "size": ui.size = +arg; save("size", ui.size); cellSize = null; dirty = true; break
     case "fit": ui.fit = arg; save("fit", arg); dirty = true; break
     case "rim": ui.rim = arg; save("rim", arg); dirty = true; break
+    case "scroll": ui.scroll = Math.max(0, ui.scroll + +arg); break
     case "zoom": glide(+arg); break
     case "link": window.open(arg, "_blank", "noopener"); break
     case "edit": edit(); break
@@ -485,9 +489,21 @@ main.addEventListener("pointerup", release)
 main.addEventListener("pointercancel", release)
 main.addEventListener("dragstart", e => e.preventDefault())
 
+let wheelRows = 0
 // The wheel and a trackpad's pinch zoom where the pointer is.
 main.addEventListener("wheel", e => {
   e.preventDefault()
+  // Over the open column the wheel scrolls it, a row a notch or so.
+  if (ui.column && chrome?.free) {
+    const g = grid(), r0 = main.getBoundingClientRect()
+    const x = (e.clientX - r0.left - g.x) / (bitmap ? g.ux : g.cw)
+    if (x >= chrome.free) {
+      wheelRows += e.deltaY / (e.deltaMode === 1 ? 1 : 16)
+      const n = Math.trunc(wheelRows)
+      if (n) { wheelRows -= n; act(`scroll:${n}`) }
+      return
+    }
+  }
   const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1
   // A level (a quarter doubling) in about 30 px of wheel, 15 of a pinch.
   const k = e.ctrlKey ? 0.012 : 0.006

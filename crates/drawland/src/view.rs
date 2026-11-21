@@ -154,6 +154,8 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place) -> Result<(), String> {
         }
         let (ansi, laid) = show(&picture, &now(ms, false, error.as_deref()));
         term.frame(&ansi);
+        // The column holds its scroll to what it has.
+        ui.scroll = laid.scroll;
 
         // What the keys and the mouse ask, gathered while the last paint was under way.
         let (mut across, mut down, mut zoom) = (0.0f64, 0.0f64, 0.0f64);
@@ -193,7 +195,9 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place) -> Result<(), String> {
                     }
                 }
                 Release => drag = None,
-                Wheel(n) => zoom -= n as f64 * 0.5,
+                // Over the column the wheel scrolls it; over the map, zooms.
+                Wheel(n, x) if ui.column && x as usize >= laid.free => action = Some(format!("scroll:{}", -n * 3)),
+                Wheel(n, _) => zoom -= n as f64 * 0.5,
             }
             let Some(action) = action else { continue };
             if ui.act(&action) {
@@ -297,8 +301,8 @@ mod terminal {
         Press(i64, i64),
         Drag(i64, i64),
         Release,
-        /// The wheel: up 1, down −1.
-        Wheel(i32),
+        /// The wheel: up 1, down −1, at column `x`.
+        Wheel(i32, i64),
     }
 
     /// The terminal in raw mode on its alternate screen, the mouse
@@ -393,8 +397,8 @@ mod terminal {
                         if let [button, x, y] = fields[..] {
                             let (x, y) = (x - 1, y - 1);
                             let event = match (button, bytes[end]) {
-                                (64, _) => Some(Event::Wheel(1)),
-                                (65, _) => Some(Event::Wheel(-1)),
+                                (64, _) => Some(Event::Wheel(1, x)),
+                                (65, _) => Some(Event::Wheel(-1, x)),
                                 (0, b'M') => Some(Event::Press(x, y)),
                                 (32, b'M') => Some(Event::Drag(x, y)),
                                 (0, b'm') => Some(Event::Release),
@@ -472,7 +476,7 @@ mod terminal {
             parse(b"\x1b[A+q\x1b[<0;5;3M\x1b[<32;7;3M\x1b[<0;7;3m\x1b[<65;1;1M", &mut e);
             assert_eq!(
                 e,
-                vec![Event::Arrow(0, -1), Event::Key('+'), Event::Key('q'), Event::Press(4, 2), Event::Drag(6, 2), Event::Release, Event::Wheel(-1)]
+                vec![Event::Arrow(0, -1), Event::Key('+'), Event::Key('q'), Event::Press(4, 2), Event::Drag(6, 2), Event::Release, Event::Wheel(-1, 0)]
             );
         }
     }
@@ -489,7 +493,7 @@ mod terminal {
         Press(i64, i64),
         Drag(i64, i64),
         Release,
-        Wheel(i32),
+        Wheel(i32, i64),
     }
 
     pub struct Raw;
