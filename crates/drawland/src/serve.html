@@ -21,7 +21,7 @@
 <main id="main"><canvas id="map"></canvas><canvas id="chrome"></canvas><span id="probe"></span></main>
 <script>
 // The map moves under the interface: the map is a frame painted from the
-// scene (moved and scaled here until the next one comes), the interface a
+// scene (moved here by whole cells until the next one comes), the interface a
 // picture of its own, laid out by the server from this page's state and
 // drawn in the same cells or pixels, with the zones a press acts on.
 const START = /*START*/null
@@ -137,11 +137,12 @@ async function pump() {
     building = r.headers.get("X-Scene") === "building"
     const frame = bitmap ? fromPbm(new Uint8Array(await r.arrayBuffer())) : fromRuns(await r.json(), g)
     // The map in the frame is moved by whole cells; it is this far (units)
-    // short of the view asked for.
+    // short of the view asked for, less than half a cell: drawn as it is.
     const [dx, dy] = (r.headers.get("X-Shift") || "0,0").split(",").map(Number)
     // A bitmap is drawn at its own size, whatever size was asked for.
     const cssW = bitmap ? frame.canvas.width * g.ux : g.cssW, cssH = bitmap ? frame.canvas.height * g.uy : g.cssH
-    shown = { ...frame, mx, my, dx, dy, per: perUnit(at), ux: g.ux, uy: g.uy, cssW, cssH }
+    const globe = r.headers.get("X-Globe") === "1"
+    shown = { ...frame, mx, my, dx, dy, globe, per: perUnit(at), ux: g.ux, uy: g.uy, cssW, cssH }
     lastMs = Math.round(performance.now() - t0)
     error = ""
     draw()
@@ -175,7 +176,7 @@ function fromPbm(bytes) {
     d[o] = d[o + 1] = d[o + 2] = black ? 0 : 255; d[o + 3] = 255
   }
   cx.putImageData(img, 0, 0)
-  return { canvas: c, smooth: false }
+  return { canvas: c }
 }
 
 function fromRuns(rows, g) {
@@ -191,7 +192,7 @@ function fromRuns(rows, g) {
       x += cells(cx, text, fg, bg, x, y, cw, ch)
     }
   })
-  return { canvas: off, smooth: true, bg: bg0 }
+  return { canvas: off, bg: bg0 }
 }
 
 // A run of characters drawn a cell each from cell (x, y); the cells taken.
@@ -205,8 +206,7 @@ function cells(cx, text, fg, bg, x, y, cw, ch) {
   return chars.length
 }
 
-// The last frame drawn where the map is now: moved and scaled by what changed
-// since, the map's ground colour round it.
+// The last frame drawn where the map is now, the map's ground colour round it.
 let raf = 0
 function draw() {
   raf = 0
@@ -219,14 +219,25 @@ function draw() {
   ctx.save()
   ctx.beginPath(); ctx.rect(g.x, g.y, g.cssW, g.cssH); ctx.clip()
   if (shown) {
-    const per = perUnit(state), [mx, my] = mercator(state.lat, state.lng)
-    const sx = shown.per / per * g.ux / shown.ux, sy = shown.per / per * g.uy / shown.uy
-    const left = g.x + g.cssW / 2 - shown.cssW / 2 * sx + (shown.mx - mx) / per * g.ux + shown.dx * shown.ux * sx
-    const top = g.y + g.cssH / 2 - shown.cssH / 2 * sy - (shown.my - my) / per * g.uy + shown.dy * shown.uy * sy
-    ctx.imageSmoothingEnabled = shown.smooth && Math.abs(sx - 1) > 1e-6
-    // Whole device pixels while the scale holds, so a bitmap stays sharp.
+    // The medium moves in its own steps: a text screen by whole characters,
+    // a bitmap by whole pixels; nothing is scaled. Until the next frame comes
+    // the last one is moved by the whole cells the view has gone, if it is
+    // the same map at the same scale; a globe turns, it does not slide, so it
+    // stays where it is, and so does a frame at another scale.
+    // A unit is a pixel on a bitmap; a character is one unit across, two down.
+    const per = perUnit(state), [cw, ch] = bitmap ? [1, 1] : [1, 2]
+    let ex = shown.dx, ey = shown.dy
+    if (!shown.globe && Math.abs(shown.per / per - 1) < 1e-9 && shown.ux === g.ux && shown.uy === g.uy) {
+      const [mx, my] = mercator(state.lat, state.lng)
+      ex += (shown.mx - mx) / per
+      ey -= (shown.my - my) / per
+    }
+    const ox = Math.round(ex / cw) * cw, oy = Math.round(ey / ch) * ch
+    const left = g.x + Math.round((g.cssW - shown.cssW) / 2 / shown.ux) * shown.ux + ox * shown.ux
+    const top = g.y + Math.round((g.cssH - shown.cssH) / 2 / shown.uy) * shown.uy + oy * shown.uy
+    ctx.imageSmoothingEnabled = false
     const snap = v => Math.round(v * dpr) / dpr
-    ctx.drawImage(shown.canvas, snap(left), snap(top), shown.cssW * sx, shown.cssH * sy)
+    ctx.drawImage(shown.canvas, snap(left), snap(top), shown.cssW, shown.cssH)
   }
   ctx.restore()
   if (chrome) drawChrome()

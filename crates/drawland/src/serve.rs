@@ -10,7 +10,9 @@
 //! while frames go on being painted from the old one; its vector tiles are
 //! as deep as the view's detail ([`View::tile_zoom`]), so a scene far out is
 //! as quick as one near. A frame moves the map by whole cells and says
-//! (`X-Shift`) how far that leaves it off the view, for the page to make up.
+//! (`X-Shift`) how far that leaves it off the view (under half a cell: the
+//! page draws it where it is). A globe's frame says `X-Globe`: the page never
+//! moves it, a globe turns.
 //! A bitmap frame is a PBM (1 bit a pixel), a text frame each row's runs of
 //! one colour as JSON.
 //!
@@ -377,7 +379,7 @@ fn globe_frame(style: &Style, i: usize, want: &mpsc::Sender<(usize, View)>, view
         Picture::Text(t) => (text_runs(t).into_bytes(), "application/json"),
     };
     let mut reply = Reply::ok(kind, body);
-    reply.headers = format!("X-Scene: {}\r\nX-Shift: 0,0\r\n", if ready { "ready" } else { "building" });
+    reply.headers = format!("X-Scene: {}\r\nX-Shift: 0,0\r\nX-Globe: 1\r\n", if ready { "ready" } else { "building" });
     Ok(reply)
 }
 
