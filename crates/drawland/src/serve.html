@@ -54,6 +54,13 @@ const ui = {
   // On a globe, names cut at the rim ("cut") or running on past it ("over").
   rim: saved("rim", "cut"),
 }
+// Settings from the address (`?column=1&theme=ink&style=…`) win over the
+// browser's: a link shows what its sender saw.
+for (const [k, v] of new URLSearchParams(location.search)) {
+  if (k === "column") ui.column = v === "1" || v === "true"
+  else if (k === "size") ui.size = +v
+  else if (k in ui) ui[k] = v
+}
 const FONT = getComputedStyle(document.getElementById("probe")).fontFamily
 // On a bitmap the theme is the paper: ink is white on black.
 const inverted = () => bitmap && ui.theme === "ink"
@@ -222,7 +229,8 @@ async function pump() {
   chromeDirty = true
   pumpChrome()
   // A wider scene on its way: ask again once it may be there.
-  if (building && !dirty) setTimeout(() => { dirty = true; pump() }, 150)
+  // (Meanwhile the frame's terra incognita sounds: asked often, it runs.)
+  if (building && !dirty) setTimeout(() => { dirty = true; pump() }, 100)
   pump()
 }
 

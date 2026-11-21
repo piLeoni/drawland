@@ -16,6 +16,7 @@
 
 pub mod bitmap;
 pub mod font;
+pub mod incognita;
 pub mod pattern;
 pub mod place;
 pub mod raster;

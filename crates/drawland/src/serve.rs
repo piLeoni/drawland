@@ -342,7 +342,10 @@ fn frame(styles: &Styles, want: &mpsc::Sender<(usize, Ask)>, q: &Query) -> Resul
     let who = q.get("who").unwrap_or_default();
     let mut recall = inner.recall.remove(&who).unwrap_or_default();
     drop(inner);
-    let (picture, (dx, dy)) = scene.render_recalling(&view, &mut recall);
+    // The time, for terra incognita's rings to run.
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    let seconds = START.get_or_init(Instant::now).elapsed().as_secs_f64();
+    let (picture, (dx, dy)) = scene.render_recalling(&view, &mut recall, seconds);
     let mut inner = style.inner.lock().unwrap();
     // Pages come and go: a few dozen remembered.
     if inner.recall.len() >= 64 {

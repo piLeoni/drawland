@@ -174,6 +174,8 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
     let bitmap = now.kind == ScreenKind::Bitmap;
     let mut menus = vec![Menu {
         id: "style".into(),
+        title: "style".into(),
+        key: Some('s'),
         label: format!("{} ▾", ui.style),
         short: format!("{}▾", ui.style),
         options: styles.iter().map(|s| Button::new(&s.name, format!("style:{}", s.name)).on(s.name == ui.style)).collect(),
@@ -185,7 +187,9 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
         let size = ui.size.unwrap_or(if bitmap { 1 } else { 14 });
         menus.push(Menu {
             id: "size".into(),
-            label: format!("{} {} ▾", if bitmap { "pixel" } else { "font" }, size_label(size)),
+            title: if bitmap { "pixel" } else { "font" }.into(),
+            key: Some('f'),
+            label: format!("{} ▾", size_label(size)),
             short: format!("{}▾", size_label(size)),
             options: sizes.iter().map(|&s| Button::new(size_label(s), format!("size:{s}")).on(s == size)).collect(),
             right: false,
@@ -194,6 +198,8 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
     let themes: Vec<&str> = if bitmap { vec!["paper", "ink"] } else { THEMES.iter().map(|(n, _)| *n).collect() };
     menus.push(Menu {
         id: "theme".into(),
+        title: "theme".into(),
+        key: Some('t'),
         label: format!("{} ▾", ui.theme),
         short: "▾".into(),
         options: themes.iter().map(|t| Button::new(*t, format!("theme:{t}")).on(*t == ui.theme)).collect(),
@@ -203,29 +209,30 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
     let place = format!("{:.5}, {:.5}", now.lat, now.lng);
     let scale = ground(now.scale, now.kind);
     let status = match now.error {
-        Some(e) => e.to_string(),
+        Some(e) => vec![e.to_string()],
         None => {
-            let mut s = format!("{place} · {scale} · {}×{}", now.size.0, now.size.1);
+            let mut s = vec![place.clone(), scale.clone(), format!("{}×{}", now.size.0, now.size.1)];
             if let Some(ms) = now.ms {
-                s += &format!(" · {ms} ms");
+                s.push(format!("{ms} ms"));
             }
             if now.loading {
-                s += " · loading round it…";
+                s.push("loading round it…".into());
             }
             s
         }
     };
-    let hint = match host {
-        Host::Terminal => "s style · t theme · p panel · e edit · q quit",
-        Host::Page => "s style · t theme · p panel · e edit",
-    };
+    let mut keys: Vec<(String, String)> = [("s", "style"), ("t", "theme"), ("p", "panel"), ("e", "edit")].iter().map(|(k, d)| (k.to_string(), d.to_string())).collect();
+    if host == Host::Terminal {
+        keys.push(("q".into(), "quit".into()));
+    }
 
     let column = ui.column.then(|| {
         let mut lines = vec![
             Line::Head("place".into()),
             Line::Text(place.clone()),
             Line::Dim(scale.clone()),
-            Line::Row(vec![Button::new("+", "zoom:1"), Button::new("−", "zoom:-1")]),
+            Line::Blank,
+            Line::Row(vec![Button::new(" + ", "zoom:1"), Button::new(" − ", "zoom:-1")]),
             Line::Blank,
             Line::Head("style".into()),
             Line::Text(ui.style.clone()),
@@ -233,9 +240,11 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
         if let Some(s) = styles.iter().find(|s| s.name == ui.style) {
             lines.push(Line::Dim(s.path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()));
         }
+        lines.push(Line::Blank);
         lines.push(Line::Row(vec![Button::new("edit", "edit"), Button::new("reload", "reload")]));
         lines.push(Line::Blank);
         lines.push(Line::Head("names on the globe".into()));
+        lines.push(Line::Blank);
         lines.push(Line::Row(vec![
             Button::new("cut at rim", "rim:cut").on(!ui.names_past_rim),
             Button::new("past rim", "rim:over").on(ui.names_past_rim),
@@ -244,9 +253,11 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
         if host == Host::Page {
             let size = ui.size.unwrap_or(if bitmap { 1 } else { 14 });
             lines.push(Line::Head(if bitmap { "pixel" } else { "font" }.into()));
+            lines.push(Line::Blank);
             lines.push(Line::Row(sizes.iter().map(|&s| Button::new(size_label(s), format!("size:{s}")).on(s == size)).collect()));
             lines.push(Line::Blank);
             lines.push(Line::Head("screen".into()));
+            lines.push(Line::Blank);
             lines.push(Line::Row(vec![
                 Button::new("window", "fit:window").on(!ui.fit_screen),
                 Button::new(format!("{}×{}", now.screen.0, now.screen.1), "fit:screen").on(ui.fit_screen),
@@ -254,16 +265,18 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
             lines.push(Line::Blank);
         }
         lines.push(Line::Head("keys".into()));
-        for k in ["arrows hjkl  move", "+ −         zoom", "s t         style, theme", "p           this panel", "n           names past the rim", "e           edit the style"] {
-            lines.push(Line::Dim(k.into()));
-        }
+        let mut table = vec![("arrows hjkl", "move"), ("+ −", "zoom"), ("s", "style"), ("t", "theme"), ("p", "this panel"), ("n", "names past the rim"), ("e", "edit the style")];
         if host == Host::Terminal {
-            lines.push(Line::Dim("q           quit".into()));
+            table.push(("q", "quit"));
+        }
+        for (k, d) in table {
+            lines.push(Line::Key(k.into(), d.into()));
         }
         lines
     });
 
     Model {
+        brand: "draw.land".into(),
         links: vec![Button::new("map", "none").on(true), Button::new("docs", format!("link:{DOCS}"))],
         menus,
         right: vec![Button::new("GitHub ↗", format!("link:{REPO}"))],
@@ -271,7 +284,7 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
         column,
         tools: vec![Button::new("+", "zoom:1"), Button::new("−", "zoom:-1"), Button::new("≡", "column")],
         status,
-        hint: hint.into(),
+        keys,
     }
 }
 

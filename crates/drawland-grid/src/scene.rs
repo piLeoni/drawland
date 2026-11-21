@@ -210,12 +210,15 @@ impl Scene {
     /// their places on it from one frame to the next, and a host shows the
     /// picture moved by this much to put it where the view is.
     pub fn render(&self, view: &View) -> (Picture, (f64, f64)) {
-        self.render_recalling(view, &mut Recall::default())
+        self.render_recalling(view, &mut Recall::default(), 0.0)
     }
 
     /// [`Scene::render`], each name first tried where it was on the ground
     /// in the frame before (`recall`), which then holds where they are now.
-    pub fn render_recalling(&self, view: &View, recall: &mut Recall) -> (Picture, (f64, f64)) {
+    /// Past the scene's edge (zoomed out faster than a wider one is built)
+    /// the view is terra incognita ([`crate::incognita`]), its rings where
+    /// they are `seconds` in.
+    pub fn render_recalling(&self, view: &View, recall: &mut Recall, seconds: f64) -> (Picture, (f64, f64)) {
         let k = self.view.per_unit / view.per_unit;
         let (sw, sh) = self.view.screen.size();
         let (vw, vh) = view.screen.size();
@@ -287,8 +290,13 @@ impl Scene {
             ((ux * k + t.x) / cw, (uy * k + t.y) / ch)
         };
         let origin = recall.origin(view, origin);
-        let (picture, placed) = crate::render_hinted(&view.screen, origin, &layers, &recall.hints(grid));
+        let (mut picture, placed) = crate::render_hinted(&view.screen, origin, &layers, &recall.hints(grid));
         recall.keep(&placed, ground);
+        // The scene's edge, a cell and a half in: its own shores and lines
+        // along it are the edge of what was fetched, not of the land.
+        let (mx, my) = (1.5 * cw, 1.5 * ch);
+        let (x0, y0, x1, y1) = (t.x + mx, t.y + my, t.x + sw * k - mx, t.y + sh * k - my);
+        crate::incognita::fill(&mut picture, &view.screen, origin, &crate::incognita::sea(&self.layers), |x, y| x < x0 || x > x1 || y < y0 || y > y1, seconds);
         (picture, (exact.x - t.x, exact.y - t.y))
     }
 }
@@ -343,17 +351,36 @@ mod tests {
         // Moving on from a frame, half a pixel east: the map moved by a
         // whole pixel (or none), the picture said to be half a pixel off.
         let mut recall = Recall::default();
-        let (_, off) = scene.render_recalling(&same, &mut recall);
+        let (_, off) = scene.render_recalling(&same, &mut recall, 0.0);
         assert!(off.0.abs() < 1e-9 && off.1.abs() < 1e-9, "a first frame is exact");
         let half = View { center: (at.center.0 + 0.5 * at.per_unit, at.center.1), ..same };
-        let (_, off) = scene.render_recalling(&half, &mut recall);
+        let (_, off) = scene.render_recalling(&half, &mut recall, 0.0);
         assert!((off.0.abs() - 0.5).abs() < 1e-9 && off.1.abs() < 1e-9);
         // At a new scale, exact again.
-        let (_, off) = scene.render_recalling(&View { per_unit: half.per_unit / 1.09, ..half }, &mut recall);
+        let (_, off) = scene.render_recalling(&View { per_unit: half.per_unit / 1.09, ..half }, &mut recall, 0.0);
         assert!(off.0.abs() < 1e-9 && off.1.abs() < 1e-9);
         assert_eq!(at.tile_zoom(), 15);
         assert!(View { per_unit: at.per_unit * 64.0, ..at }.tile_zoom() == 9);
         assert!(scene.covers(&same) && !scene.covers(&near) && !scene.covers(&View { center: (at.center.0 + 40.0 * at.per_unit, at.center.1), ..same }));
+    }
+
+    #[test]
+    fn past_the_scene_is_the_sea_sounding() {
+        // A scene of solid sea; seen four times farther out, the view past
+        // its edge is the same sea, not paper, and rings run over it.
+        let wide = Screen { kind: ScreenKind::Bitmap, width: 40, height: 40, invert: false };
+        let at = View::at(12.0, 45.0, 3000.0, wide);
+        let solid = Look::Fill(FillPaint { pattern: Some("solid".into()), ..FillPaint::default() });
+        let all = square(0.0, 0.0, 40.0);
+        let scene = Scene::new(at, vec![Painted { id: "water".into(), look: solid, halo: Halo(0, 0), shape: PaintShape::Area(MultiPolygon::new(vec![all])) }]);
+        let far = View { per_unit: at.per_unit * 4.0, ..at };
+        let black = |t: f64| match scene.render_recalling(&far, &mut Recall::default(), t).0 {
+            Picture::Bitmap(b) => (0..40).flat_map(|y| (0..40).map(move |x| (x, y))).filter(|&(x, y)| b.black(x, y)).collect::<Vec<_>>(),
+            _ => unreachable!(),
+        };
+        let (now, later) = (black(0.0), black(0.3));
+        assert!(now.len() > 1200, "nearly all sea: {}", now.len());
+        assert!(now.len() < 1600 && now != later, "rings, and they run");
     }
 
     #[test]
@@ -386,7 +413,7 @@ mod tests {
         let look = Look::Text(drawland_core::paint::TextPaint { spacing: 1000, ..Default::default() });
         let scene = Scene::new(at, vec![Painted { id: "n".into(), look, halo: Halo(0, 0), shape: PaintShape::Names(vec![named]) }]);
         // Where the name starts on the screen, in columns from its middle.
-        let start = |v: &View, recall: &mut Recall| match scene.render_recalling(v, recall).0 {
+        let start = |v: &View, recall: &mut Recall| match scene.render_recalling(v, recall, 0.0).0 {
             Picture::Text(t) => t.txt().lines().find_map(|l| l.find("Calle").map(|i| l[..i].chars().count() as f64 - 30.0)).unwrap(),
             _ => unreachable!(),
         };

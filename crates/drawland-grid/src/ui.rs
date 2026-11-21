@@ -3,10 +3,15 @@
 //! ([`Chrome::lay`]), then put over a text screen ([`Chrome::text`]) or
 //! drawn in pixels ([`Chrome::bitmap`]); cells it leaves empty show the map.
 //!
-//! Its parts are a web page's: a bar on top (links on the left, menus that
-//! drop down, links on the right), a column on the right that opens and
-//! closes, a few tools floating top right while it is closed, and a status
-//! line at the bottom. Each thing that can be pressed has a [`Zone`] naming
+//! Its parts are a web page's: a bar on top (the site's name, links, menus
+//! that drop down, links on the right), a column on the right that opens
+//! and closes, a few tools floating top right while it is closed, and a
+//! status line at the bottom.
+//!
+//! The look, both ways: a key's letter in the accent (underlined on 1 bit),
+//! labels quieter than the values they name, sections titled over a rule,
+//! a row of choices one segmented control (framed on 1 bit, the chosen
+//! one inverse), the status in segments. Each thing that can be pressed has a [`Zone`] naming
 //! its action; the host turns presses and keys into actions and lays the
 //! chrome out again.
 
@@ -28,6 +33,19 @@ pub enum Role {
     Dim,
     /// Borders and dividers.
     Rule,
+    /// A key's letter: the theme's accent.
+    Accent,
+    /// The site's name on the bar: on the accent.
+    Brand,
+    /// The divider between the choices of one segmented control.
+    Seam,
+}
+
+impl Role {
+    /// Part of a control: a button, the chosen one, a divider between.
+    fn control(self) -> bool {
+        matches!(self, Role::Button | Role::On | Role::Seam)
+    }
 }
 
 /// A thing that can be pressed: a link, a menu's option, a tool.
@@ -50,10 +68,15 @@ impl Button {
     }
 }
 
-/// A menu on the bar: its label (with `▾`) and the options it drops down.
+/// A menu on the bar: what it sets (`style`),
+/// its value (with `▾`) and the options it drops down.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Menu {
     pub id: String,
+    /// What it sets, quieter, before its value.
+    pub title: String,
+    /// The key that opens it, in the accent where the title has it.
+    pub key: Option<char>,
     pub label: String,
     /// The label when the bar is short of room.
     pub short: String,
@@ -70,14 +93,18 @@ pub enum Line {
     Text(String),
     /// Words in the quieter colour.
     Dim(String),
-    /// Buttons side by side.
+    /// Buttons side by side: one segmented control.
     Row(Vec<Button>),
+    /// A key and what it does, in two columns.
+    Key(String, String),
     Blank,
 }
 
 /// The interface to draw.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Model {
+    /// The site's name, first on the bar.
+    pub brand: String,
     /// The bar's left: the site's own links.
     pub links: Vec<Button>,
     pub menus: Vec<Menu>,
@@ -89,9 +116,10 @@ pub struct Model {
     pub column: Option<Vec<Line>>,
     /// Floating top right while the column is closed.
     pub tools: Vec<Button>,
-    /// The status line: what is shown, then a hint at its right.
-    pub status: String,
-    pub hint: String,
+    /// The status line: what is shown, in segments.
+    pub status: Vec<String>,
+    /// Keys and what they do, at the status line's right.
+    pub keys: Vec<(String, String)>,
 }
 
 /// A place to press: cells `x..x + w`, `y..y + h`.
@@ -202,13 +230,18 @@ impl Chrome {
         let w = self.width;
         self.fill(0, 0, w, 1, Role::Bar);
         let width = |s: &str| s.chars().count() + 2;
+        let menu_width = |m: &Menu, short: bool| if short || m.title.is_empty() { width(if short { &m.short } else { &m.label }) } else { width(&m.label) + m.title.chars().count() + 1 };
+        let brand = if model.brand.is_empty() { 0 } else { width(&model.brand) + 1 };
         let links: usize = model.links.iter().map(|b| width(&b.label) + 1).sum();
         let right: usize = model.right.iter().map(|b| width(&b.label) + 1).sum();
-        let menus = |short: bool| -> usize {
-            model.menus.iter().map(|m| width(if short { &m.short } else { &m.label }) + 1).sum::<usize>() + 2
-        };
-        let short = 1 + links + menus(false) + right > w;
-        let mut x = 1;
+        let menus = |short: bool| -> usize { model.menus.iter().map(|m| menu_width(m, short) + 1).sum::<usize>() + 2 };
+        let short = brand + links + menus(false) + right > w;
+        let mut x = 0;
+        if brand > 0 && brand + links + menus(true) + right <= w {
+            x += self.write(x, 0, &format!(" {} ", model.brand), Role::Brand, w) + 1;
+        } else {
+            x = 1;
+        }
         for b in &model.links {
             x += self.button(x, 0, b, Role::Bar, w) + 1;
         }
@@ -220,7 +253,7 @@ impl Chrome {
             x += self.menu_label(x, m, short, model.open.as_deref() == Some(&m.id), w) + 1;
         }
         // The right, from the edge in.
-        let mut rx = w.saturating_sub(1);
+        let mut rx = w;
         for b in model.right.iter().rev() {
             let n = width(&b.label);
             if rx < x + n {
@@ -231,7 +264,7 @@ impl Chrome {
             rx = rx.saturating_sub(1);
         }
         for m in right_menus.iter().rev() {
-            let n = width(if short { &m.short } else { &m.label });
+            let n = menu_width(m, short);
             if rx < x + n {
                 break;
             }
@@ -241,9 +274,26 @@ impl Chrome {
         }
     }
 
+    /// A menu on the bar: ` style terminal ▾ `, the title's key letter in
+    /// the accent and the rest of it quieter; the value alone
+    /// when the bar is short. Inverse while it is open.
     fn menu_label(&mut self, x: usize, m: &Menu, short: bool, open: bool, end: usize) -> usize {
-        let b = Button::new(if short { &m.short } else { &m.label }, format!("open:{}", m.id)).on(open);
-        self.button(x, 0, &b, Role::Bar, end)
+        let action = format!("open:{}", m.id);
+        if short || m.title.is_empty() {
+            let b = Button::new(if short { &m.short } else { &m.label }, action).on(open);
+            return self.button(x, 0, &b, Role::Bar, end);
+        }
+        let (rest, key, quiet) = if open { (Role::On, Role::On, Role::On) } else { (Role::Bar, Role::Accent, Role::Dim) };
+        let mut n = self.write(x, 0, " ", rest, end);
+        let mut keyed = false;
+        for ch in m.title.chars() {
+            let is_key = !keyed && Some(ch) == m.key;
+            keyed |= is_key;
+            n += self.write(x + n, 0, &ch.to_string(), if is_key { key } else { quiet }, end);
+        }
+        n += self.write(x + n, 0, &format!(" {} ", m.label), rest, end);
+        self.zone(x, 0, n, 1, &action);
+        n
     }
 
     /// A menu dropped down under its label.
@@ -252,7 +302,8 @@ impl Chrome {
         let Some(at) = at else { return };
         let inner = m.options.iter().map(|o| o.label.chars().count() + 4).max().unwrap_or(4);
         let w = (inner + 2).min(self.width);
-        let x = if m.right { (at + 1 + m.label.chars().count() + 2).saturating_sub(w).min(self.width - w) } else { at.min(self.width - w) };
+        let label = self.zones.iter().find(|z| z.y == 0 && z.action == format!("open:{}", m.id)).map(|z| z.w).unwrap_or(0);
+        let x = if m.right { (at + label).saturating_sub(w).min(self.width - w) } else { at.min(self.width - w) };
         let h = (m.options.len() + 2).min(self.height.saturating_sub(1));
         if h < 3 {
             return;
@@ -287,20 +338,33 @@ impl Chrome {
         self.put(x + w - 1, y + h - 1, '┘', Role::Rule);
     }
 
+    /// The status line: its segments divided by rules; the keys at its
+    /// right where they fit, each key in the accent and its deed quieter.
     fn status(&mut self, model: &Model) {
         let (w, y) = (self.width, self.height - 1);
         self.fill(0, y, w, 1, Role::Bar);
-        // The hint only where the status has its room beside it.
-        let hint = model.hint.chars().count();
-        let fits = model.status.chars().count() + hint + 5 <= w;
-        let room = if fits { w - hint - 2 } else { w };
-        self.write(1, y, &model.status, Role::Bar, room);
-        if fits {
-            self.write(w - hint - 1, y, &model.hint, Role::Dim, w);
-        }
         self.zone(0, y, w, 1, "none");
+        let keys: usize = model.keys.iter().map(|(k, d)| k.chars().count() + d.chars().count() + 3).sum();
+        let status: usize = model.status.iter().map(|s| s.chars().count() + 3).sum();
+        let fits = !model.keys.is_empty() && status + keys + 2 <= w;
+        let room = if fits { w - keys - 1 } else { w };
+        let mut x = 1;
+        for (i, seg) in model.status.iter().enumerate() {
+            if i > 0 {
+                x += self.write(x, y, " │ ", Role::Rule, room);
+            }
+            x += self.write(x, y, seg, Role::Bar, room);
+        }
+        if fits {
+            let mut x = w - keys;
+            for (k, d) in &model.keys {
+                x += self.write(x, y, k, Role::Accent, w);
+                x += self.write(x, y, &format!(" {}  ", d), Role::Dim, w);
+            }
+        }
     }
 
+    /// The column: a header with its close button, then its lines.
     fn column(&mut self, lines: &[Line]) {
         let cw = column_width(self.width);
         let x0 = self.width - cw;
@@ -312,14 +376,21 @@ impl Chrome {
         }
         self.zone(x0, top, cw, bottom - top, "none");
         let (left, end) = (x0 + 2, self.width - 1);
-        let mut y = top + 1;
+        // The header: what it is, and × to close it.
+        self.write(left, top, "settings", Role::Dim, end);
+        self.button(self.width - 4, top, &Button::new("×", "column"), Role::Panel, self.width);
+        let key = lines.iter().filter_map(|l| if let Line::Key(k, _) = l { Some(k.chars().count()) } else { None }).max().unwrap_or(0);
+        let mut y = top + 2;
         for line in lines {
             if y >= bottom {
                 break;
             }
             match line {
                 Line::Head(t) => {
-                    self.write(left, y, &t.to_uppercase(), Role::Dim, end);
+                    let n = self.write(left, y, &t.to_uppercase(), Role::Dim, end);
+                    for x in left + n + 1..end {
+                        self.put(x, y, '─', Role::Rule);
+                    }
                 }
                 Line::Text(t) => {
                     self.write(left, y, t, Role::Panel, end);
@@ -327,18 +398,26 @@ impl Chrome {
                 Line::Dim(t) => {
                     self.write(left, y, t, Role::Dim, end);
                 }
+                Line::Key(k, d) => {
+                    self.write(left, y, k, Role::Accent, end);
+                    self.write(left + key + 2, y, d, Role::Dim, end);
+                }
                 Line::Row(buttons) => {
+                    // One segmented control, wrapped where it is too wide.
                     let mut x = left;
                     for b in buttons {
                         let n = b.label.chars().count() + 2;
-                        if x + n > end && x > left {
-                            y += 1;
+                        if x > left && x + 1 + n > end {
+                            y += 2;
                             x = left;
                             if y >= bottom {
                                 break;
                             }
                         }
-                        x += self.button(x, y, b, Role::Button, end) + 1;
+                        if x > left {
+                            x += self.write(x, y, "│", Role::Seam, end);
+                        }
+                        x += self.button(x, y, b, Role::Button, end);
                     }
                 }
                 Line::Blank => {}
@@ -392,23 +471,25 @@ impl Chrome {
     }
 }
 
-/// A chrome's colours on a text screen: a theme's paper and ink, the rest
-/// mixed from them.
+/// A chrome's colours on a text screen: a theme's paper, ink and accent,
+/// the rest mixed from them.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Palette {
     pub paper: Rgb,
     pub ink: Rgb,
+    /// Keys' letters and the site's name.
+    pub accent: Rgb,
 }
 
 /// The themes of draw.land's page, by name: `paper`, `ink`, `silk`,
 /// `abyss`, `ember`, `phosphor`.
 pub const THEMES: &[(&str, Palette)] = &[
-    ("paper", Palette { paper: Rgb(0xff, 0xff, 0xff), ink: Rgb(0x00, 0x00, 0x00) }),
-    ("ink", Palette { paper: Rgb(0x0a, 0x0b, 0x0d), ink: Rgb(0xee, 0xf1, 0xf6) }),
-    ("silk", Palette { paper: Rgb(0xf7, 0xf6, 0xf2), ink: Rgb(0x5f, 0x5d, 0x58) }),
-    ("abyss", Palette { paper: Rgb(0x0b, 0x23, 0x26), ink: Rgb(0xe9, 0xdf, 0xc8) }),
-    ("ember", Palette { paper: Rgb(0x12, 0x0e, 0x06), ink: Rgb(0xff, 0xbf, 0x3a) }),
-    ("phosphor", Palette { paper: Rgb(0x0a, 0x0f, 0x0a), ink: Rgb(0x41, 0xff, 0x41) }),
+    ("paper", Palette { paper: Rgb(0xff, 0xff, 0xff), ink: Rgb(0x00, 0x00, 0x00), accent: Rgb(0xd0, 0x3a, 0x1a) }),
+    ("ink", Palette { paper: Rgb(0x0a, 0x0b, 0x0d), ink: Rgb(0xee, 0xf1, 0xf6), accent: Rgb(0xff, 0xb4, 0x3a) }),
+    ("silk", Palette { paper: Rgb(0xf7, 0xf6, 0xf2), ink: Rgb(0x5f, 0x5d, 0x58), accent: Rgb(0xb4, 0x5a, 0x2c) }),
+    ("abyss", Palette { paper: Rgb(0x0b, 0x23, 0x26), ink: Rgb(0xe9, 0xdf, 0xc8), accent: Rgb(0x5f, 0xd3, 0xc4) }),
+    ("ember", Palette { paper: Rgb(0x12, 0x0e, 0x06), ink: Rgb(0xff, 0xbf, 0x3a), accent: Rgb(0xff, 0x6a, 0x2a) }),
+    ("phosphor", Palette { paper: Rgb(0x0a, 0x0f, 0x0a), ink: Rgb(0x41, 0xff, 0x41), accent: Rgb(0xc8, 0xff, 0xc8) }),
 ];
 
 impl Palette {
@@ -422,25 +503,37 @@ impl Palette {
         Rgb(m(self.paper.0, self.ink.0), m(self.paper.1, self.ink.1), m(self.paper.2, self.ink.2))
     }
 
-    /// A role's ink and paper.
+    /// The bar's ground, and the column's and menus' (a shade off the map).
+    fn bar(&self) -> Rgb {
+        self.mix(0.08)
+    }
+
+    fn panel(&self) -> Rgb {
+        self.mix(0.04)
+    }
+
+    /// A role's ink and paper, on the column.
     pub fn colours(&self, role: Role) -> (Rgb, Rgb) {
         match role {
-            Role::Bar => (self.ink, self.mix(0.07)),
-            Role::Button => (self.ink, self.mix(0.14)),
+            Role::Bar => (self.mix(0.92), self.bar()),
+            Role::Button => (self.mix(0.92), self.mix(0.15)),
+            Role::Seam => (self.mix(0.32), self.mix(0.15)),
             Role::On => (self.paper, self.ink),
-            Role::Panel => (self.ink, self.paper),
-            Role::Dim => (self.mix(0.55), self.paper),
-            Role::Rule => (self.mix(0.3), self.paper),
+            Role::Panel => (self.ink, self.panel()),
+            Role::Dim => (self.mix(0.5), self.panel()),
+            Role::Rule => (self.mix(0.22), self.panel()),
+            Role::Accent => (self.accent, self.panel()),
+            Role::Brand => (self.paper, self.accent),
         }
     }
 
-    /// The colours of a role's cell where it sits: dim words and rules on
-    /// the bar keep the bar's paper.
+    /// The colours of a role's cell where it sits: quiet words, rules and
+    /// keys on the bar or the status line keep the bar's ground.
     pub fn at(&self, role: Role, row: usize, height: usize) -> (Rgb, Rgb) {
         let (fg, bg) = self.colours(role);
         let on_bar = row == 0 || row + 1 == height;
         match role {
-            Role::Dim | Role::Rule if on_bar => (fg, self.colours(Role::Bar).1),
+            Role::Dim | Role::Rule | Role::Accent | Role::Panel if on_bar => (fg, self.bar()),
             _ => (fg, bg),
         }
     }
@@ -476,13 +569,41 @@ impl<'a> Pixels<'a> {
         // The bar's rule under it and the status line's over it.
         let edge = (cy == 0 && py == fh - 1 && c.height > 1) || (cy + 1 == c.height && cy > 0 && py == cy * fh);
         Some(match role {
-            Role::On => !ink,
-            // A button at rest is underlined in dots. One bit has no grey:
-            // quieter words are inked like the rest (a dither of a 6 × 12
-            // glyph cannot be read).
-            Role::Button => ink || (y + 1 == fh && px % 2 == 0) || edge,
+            Role::On | Role::Brand => !ink,
+            // A control is framed, the frame broken where a letter's tail
+            // reaches it and its corners rounded; the chosen one inverse.
+            Role::Button | Role::Seam if cy > 0 => ink || self.frame(cx, cy, x, y),
+            // A key's letter is underlined, broken where a tail reaches it.
+            Role::Accent => ink || (y + 1 == fh && !self.tail(ch, x)) || edge,
+            // One bit has no grey: quieter words are inked like the rest (a
+            // dither of a 6 × 12 glyph cannot be read).
             _ => ink || edge,
         })
+    }
+
+    /// Whether `(x, y)` in cell `(cx, cy)` is on its control's frame.
+    fn frame(&self, cx: usize, cy: usize, x: usize, y: usize) -> bool {
+        let (fw, fh) = (self.font.width, self.font.height);
+        let c = self.chrome;
+        let part = |dx: isize| {
+            let nx = cx as isize + dx;
+            nx >= 0 && (nx as usize) < c.width && c.cell(nx as usize, cy).is_some_and(|(_, r)| r.control())
+        };
+        let (first, last) = (!part(-1), !part(1));
+        let (left, right) = (first && x == 0, last && x + 1 == fw);
+        let (top, bottom) = (y == 0, y + 1 == fh);
+        // Rounded: no corner pixel.
+        if (left || right) && (top || bottom) {
+            return false;
+        }
+        let tail = bottom && c.cell(cx, cy).is_some_and(|(ch, _)| self.tail(ch, x));
+        left || right || top || (bottom && !tail)
+    }
+
+    /// Whether a letter's tail comes near the cell's foot at `x`.
+    fn tail(&self, ch: char, x: usize) -> bool {
+        let fh = self.font.height;
+        (x.saturating_sub(1)..=(x + 1).min(self.font.width - 1)).any(|xx| (fh.saturating_sub(3)..fh).any(|yy| glyph(self.font, ch, xx, yy)))
     }
 }
 
@@ -503,6 +624,11 @@ fn glyph(font: &Font, ch: char, x: usize, y: usize) -> bool {
             let row = |t: f64| (fy.floor() - (h * t).floor()).abs() < 0.5;
             (row(0.3) || row(0.5) || row(0.7)) && fx > w * 0.1 && fx < w * 0.9
         }
+        '×' if !font.has(ch) => {
+            let (cx, cy, r) = (w / 2.0, h * 0.5, w * 0.3);
+            ((fx - cx).abs() - (fy - cy).abs()).abs() < 0.6 && (fx - cx).abs() <= r
+        }
+        '·' if !font.has(ch) => (fx - w / 2.0).abs() < 0.6 && (fy - h * 0.5).abs() < 0.6,
         '•' if !font.has(ch) => (fx - w / 2.0).hypot((fy - h * 0.55) * 1.0) <= w * 0.28,
         '↗' if !font.has(ch) => {
             // A diagonal from the bottom left, a head at the top right.
@@ -524,23 +650,26 @@ mod tests {
 
     fn model() -> Model {
         Model {
+            brand: "draw.land".into(),
             links: vec![Button::new("map", "link:/").on(true), Button::new("docs", "link:/docs")],
             menus: vec![
                 Menu {
                     id: "style".into(),
+                    title: "style".into(),
+                    key: Some('s'),
                     label: "terminal ▾".into(),
                     short: "terminal▾".into(),
                     options: vec![Button::new("terminal", "style:terminal").on(true), Button::new("1-bit", "style:1-bit")],
                     right: false,
                 },
-                Menu { id: "theme".into(), label: "ink ▾".into(), short: "▾".into(), options: vec![Button::new("paper", "theme:paper")], right: true },
+                Menu { id: "theme".into(), title: "theme".into(), key: Some('t'), label: "ink ▾".into(), short: "▾".into(), options: vec![Button::new("paper", "theme:paper")], right: true },
             ],
             right: vec![Button::new("GitHub ↗", "link:https://github.com/piLeoni/drawland")],
             open: None,
             column: None,
             tools: vec![Button::new("+", "zoom:1"), Button::new("−", "zoom:-1"), Button::new("≡", "column")],
-            status: "45.43750, 12.33580 · 8 m a character".into(),
-            hint: "s style · p panel".into(),
+            status: vec!["45.43750, 12.33580".into(), "8 m a character".into()],
+            keys: vec![("s".into(), "style".into()), ("p".into(), "panel".into())],
         }
     }
 
@@ -558,11 +687,14 @@ mod tests {
     fn the_bar_holds_links_left_menus_and_github_right() {
         let c = Chrome::lay(&model(), 80, 24);
         let bar = row(&c, 0);
-        assert!(bar.starts_with("  map   docs  │  terminal ▾ "), "{bar}");
-        assert!(bar.trim_end().ends_with("ink ▾   GitHub ↗"), "{bar}");
-        assert_eq!(c.cell(1, 0), Some((' ', Role::On)), "the page shown is inverse");
+        assert!(bar.starts_with(" draw.land   map   docs  │  style terminal ▾ "), "{bar}");
+        assert!(bar.trim_end().ends_with("theme ink ▾   GitHub ↗"), "{bar}");
+        assert_eq!(c.cell(0, 0), Some((' ', Role::Brand)));
+        assert_eq!(c.cell(12, 0), Some((' ', Role::On)), "the page shown is inverse");
+        assert_eq!(c.cell(col(&c, 0, "style"), 0), Some(('s', Role::Accent)), "a menu's key in the accent");
         assert_eq!(c.hit(col(&c, 0, "docs"), 0), Some("link:/docs"));
-        assert!(row(&c, 23).contains("8 m a character") && row(&c, 23).ends_with("s style · p panel "));
+        let status = row(&c, 23);
+        assert!(status.contains("45.43750, 12.33580 │ 8 m a character") && status.contains("s style  p panel"), "{status}");
         // The map shows everywhere else but the tools.
         assert_eq!(c.cell(10, 10), None);
         assert_eq!(c.hit(78 - 2, 2), Some("column"), "{}", row(&c, 2));
@@ -573,7 +705,7 @@ mod tests {
         let mut m = model();
         m.open = Some("style".into());
         let c = Chrome::lay(&m, 80, 24);
-        let at = col(&c, 0, "terminal") - 1;
+        let at = col(&c, 0, "style terminal") - 1;
         assert_eq!(c.cell(at, 1), Some(('┌', Role::Rule)), "{}", row(&c, 1));
         assert!(row(&c, 2).contains(" • terminal"), "{}", row(&c, 2));
         assert_eq!(c.hit(at + 3, 3), Some("style:1-bit"));
@@ -587,10 +719,13 @@ mod tests {
         let c = Chrome::lay(&m, 90, 30);
         let x0 = 90 - column_width(90);
         assert_eq!(c.cell(x0, 5), Some(('│', Role::Rule)));
-        assert!(row(&c, 2).contains("SCREEN"), "{}", row(&c, 2));
-        assert!(row(&c, 3).contains(" 10   12 "), "{}", row(&c, 3));
-        assert!(c.zones.iter().all(|z| z.action != "column"), "no floating tools");
-        assert_eq!(c.hit(x0 + 3, 3), Some("size:10"));
+        assert!(row(&c, 1).contains("settings") && row(&c, 1).contains(" × "), "{}", row(&c, 1));
+        assert_eq!(c.hit(89 - 2, 1), Some("column"), "× closes it");
+        assert!(row(&c, 3).contains("SCREEN ──"), "{}", row(&c, 3));
+        assert!(row(&c, 4).contains(" 10 │ 12 "), "one segmented control: {}", row(&c, 4));
+        assert_eq!(c.cell(col(&c, 4, "│ 12"), 4), Some(('│', Role::Seam)));
+        assert!(c.zones.iter().all(|z| z.action != "column" || z.y == 1), "no floating tools");
+        assert_eq!(c.hit(x0 + 3, 4), Some("size:10"));
     }
 
     #[test]
@@ -602,12 +737,13 @@ mod tests {
 
     #[test]
     fn on_pixels_the_bar_is_ruled_and_the_map_shows_below_it() {
-        let c = Chrome::lay(&model(), 50, 20);
+        let c = Chrome::lay(&model(), 80, 20);
         let font = crate::font::font("spleen-6x12").unwrap();
         let p = Pixels::new(&c, font);
-        assert_eq!(p.at(100, 11), Some(true), "the rule under the bar");
+        assert_eq!(p.at(150, 11), Some(true), "the rule under the bar");
         assert_eq!(p.at(100, 5 * 12), None, "the map");
-        // The page shown is inverse: its padding is ink.
-        assert_eq!(p.at(6, 5), Some(true));
+        // The site's name and the page shown are inverse: their padding is ink.
+        assert_eq!(p.at(2, 5), Some(true));
+        assert_eq!(p.at(12 * 6 + 2, 5), Some(true));
     }
 }

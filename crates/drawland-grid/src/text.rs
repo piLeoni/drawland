@@ -121,6 +121,19 @@ impl Text {
         out
     }
 
+    /// The cell at `(x, y)` lit, as a ring of a sounding passes: its
+    /// character brighter, a dot where it had none.
+    pub fn glint(&mut self, x: usize, y: usize) {
+        if let Some(cell) = self.at(x as i64, y as i64) {
+            if cell.char() == ' ' {
+                cell.kind = Kind::Char('·');
+            }
+            let fg = cell.fg.unwrap_or(Rgb(0x6a, 0x7a, 0x90));
+            let lift = |c: u8| (c as f64 + (255.0 - c as f64) * 0.55).round() as u8;
+            cell.fg = Some(Rgb(lift(fg.0), lift(fg.1), lift(fg.2)));
+        }
+    }
+
     /// The cell at `(x, y)` set.
     pub fn put(&mut self, x: usize, y: usize, cell: Cell) {
         if x < self.width && y < self.height {
