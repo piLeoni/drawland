@@ -101,6 +101,51 @@ impl Picture {
         }
     }
 
+    /// A globe's picture (an `ortho` output) with everything past its rim
+    /// cleared, the rim drawn: the globe is `radius` units round the
+    /// screen's centre. Past the rim the profile's background (a page
+    /// filled as land) would stand for ground there is none of.
+    pub fn globe(&mut self, radius: f64) {
+        match self {
+            Picture::Bitmap(b) => {
+                let (cx, cy) = (b.width as f64 / 2.0, b.height as f64 / 2.0);
+                for y in 0..b.height {
+                    for x in 0..b.width {
+                        let d = (x as f64 + 0.5 - cx).hypot(y as f64 + 0.5 - cy);
+                        if d > radius + 0.5 {
+                            b.put(x, y, false);
+                        } else if d > radius - 0.5 {
+                            b.put(x, y, true);
+                        }
+                    }
+                }
+            }
+            Picture::Text(t) => {
+                // A cell is one unit across and two down.
+                let (cx, cy) = (t.width as f64 / 2.0, t.height as f64);
+                for y in 0..t.height {
+                    for x in 0..t.width {
+                        let d = (x as f64 + 0.5 - cx).hypot((y as f64 + 0.5) * 2.0 - cy);
+                        if d > radius + 0.5 {
+                            t.clear(x, y);
+                        }
+                    }
+                }
+                // The rim in Braille dots, two to a unit.
+                let steps = (radius * 4.0 * std::f64::consts::PI).ceil().max(16.0) as usize;
+                let rim = drawland_core::paint::Rgb(0x5a, 0x64, 0x78);
+                for i in 0..steps {
+                    let a = i as f64 / steps as f64 * std::f64::consts::TAU;
+                    let (x, y) = ((cx + radius * a.cos()) * 2.0, (cy + radius * a.sin()) * 2.0);
+                    let cell = ((x / 2.0) as usize, (y / 4.0) as usize);
+                    if cell.0 < t.width && cell.1 < t.height && t.cell(cell.0, cell.1).char() == ' ' {
+                        t.dot(x as i64, y as i64, Some(rim));
+                    }
+                }
+            }
+        }
+    }
+
     /// The picture as a terminal shows it: text in colour, a bitmap in
     /// Braille.
     pub fn ansi(&self) -> String {

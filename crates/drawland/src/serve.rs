@@ -54,6 +54,8 @@ struct Inner {
     grammar: Grammar,
     screen: Screen,
     scene: Option<Arc<Scene>>,
+    /// Far out, the last globe painted and the view it shows.
+    globe: Option<(View, Arc<Picture>)>,
     error: Option<String>,
     building: bool,
     /// Counts the profile's readings: a scene built from an older one is
@@ -70,7 +72,7 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place, port: u16) -> Result<(),
     let mut list = vec![Style {
         name: name_of(path),
         path: path.to_path_buf(),
-        inner: Mutex::new(Inner { profile, grammar: grammar.clone(), screen, scene: None, error: None, building: false, generation: 0 }),
+        inner: Mutex::new(Inner { profile, grammar: grammar.clone(), screen, scene: None, globe: None, error: None, building: false, generation: 0 }),
         ready: Condvar::new(),
     }];
     for s in chrome::styles(path, Some(kind)).into_iter().skip(1) {
@@ -82,7 +84,7 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place, port: u16) -> Result<(),
             Ok((profile, grammar, screen)) if screen.kind == kind => list.push(Style {
                 name: s.name,
                 path: s.path,
-                inner: Mutex::new(Inner { profile, grammar, screen, scene: None, error: None, building: false, generation: 0 }),
+                inner: Mutex::new(Inner { profile, grammar, screen, scene: None, globe: None, error: None, building: false, generation: 0 }),
                 ready: Condvar::new(),
             }),
             Ok(_) => {}
@@ -126,9 +128,11 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place, port: u16) -> Result<(),
         for i in 0..styles.len() {
             let Some(view) = pending[i].take() else { continue };
             let style = &styles[i];
+            let far = crate::globe::far_view(&view);
             let (grammar, profile, generation) = {
                 let mut inner = style.inner.lock().unwrap();
-                if inner.scene.as_ref().is_some_and(|s| s.covers(&view)) {
+                let done = if far { inner.globe.as_ref().is_some_and(|(v, _)| *v == view) } else { inner.scene.as_ref().is_some_and(|s| s.covers(&view)) };
+                if done {
                     inner.building = false;
                     continue;
                 }
@@ -136,6 +140,26 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place, port: u16) -> Result<(),
                 (inner.grammar.clone(), inner.profile.clone(), inner.generation)
             };
             let t = Instant::now();
+            if far {
+                let painted = globe(drawer, &profile, &grammar, &view);
+                let mut inner = style.inner.lock().unwrap();
+                if inner.generation == generation {
+                    match painted {
+                        Ok(p) => {
+                            eprintln!("  {}: globe in {} ms", style.name, t.elapsed().as_millis());
+                            inner.globe = Some((view, Arc::new(p)));
+                            inner.error = None;
+                        }
+                        Err(e) => {
+                            eprintln!("  {}: {e}", style.name);
+                            inner.error = Some(e);
+                        }
+                    }
+                }
+                inner.building = false;
+                style.ready.notify_all();
+                continue;
+            }
             let built = build(drawer, &profile, &grammar, &view);
             let mut inner = style.inner.lock().unwrap();
             if inner.generation == generation {
@@ -177,6 +201,23 @@ fn build(drawer: &Drawer, profile: &Profile, grammar: &Grammar, view: &View) -> 
     grammar.output.tile_zoom = Some(view.tile_zoom());
     grammar.output.fit_screen()?;
     drawer.scene_graph(&grammar, &Place::at(lat, lng), profile.dir(), &())
+}
+
+/// The view far out: the graph painted on a globe round its centre, the
+/// view's own size, past the rim cleared. Each is a run of the graph, on
+/// tiles a few levels deep.
+fn globe(drawer: &Drawer, profile: &Profile, grammar: &Grammar, view: &View) -> Result<Picture, String> {
+    let (lng, lat) = drawland_grid::scene::geographic(view.center);
+    let mut grammar = grammar.clone();
+    crate::globe::make(&mut grammar);
+    grammar.output.screen = Some(view.screen);
+    let scale = crate::globe::scale_of(view);
+    grammar.output.scale.0 = scale;
+    grammar.output.tile_zoom = Some(view.tile_zoom());
+    grammar.output.fit_screen()?;
+    let mut picture = drawer.paint_graph(&grammar, &Place::at(lat, lng), profile.dir(), &())?.picture;
+    picture.globe(crate::globe::radius(scale));
+    Ok(picture)
 }
 
 /// A request: its method, target (`/frame?…`) and body.
@@ -263,6 +304,9 @@ fn frame(styles: &Styles, want: &mpsc::Sender<(usize, View)>, q: &Query) -> Resu
     s.width = (q.number("w")? as u32).clamp(1, 4096);
     s.height = (q.number("h")? as u32).clamp(1, 4096);
     let view = View::at(q.number("lng")?, q.number("lat")?, q.number("scale")?.clamp(100.0, 1e8), s);
+    if crate::globe::far_view(&view) {
+        return globe_frame(style, i, want, view, inner);
+    }
     if !inner.scene.as_ref().is_some_and(|sc| sc.covers(&view)) && !inner.building {
         let _ = want.send((i, view));
         inner.building = true;
@@ -290,6 +334,50 @@ fn frame(styles: &Styles, want: &mpsc::Sender<(usize, View)>, q: &Query) -> Resu
     let kind = if matches!(picture, Picture::Bitmap(_)) { "image/x-portable-bitmap" } else { "application/json" };
     let mut reply = Reply::ok(kind, body);
     reply.headers = format!("X-Scene: {}\r\nX-Shift: {dx:.4},{dy:.4}\r\n", if building { "building" } else { "ready" });
+    Ok(reply)
+}
+
+/// A frame far out: the globe painted for this view, or until it comes the
+/// last one (`X-Scene: building`, and the page asks again).
+fn globe_frame(style: &Style, i: usize, want: &mpsc::Sender<(usize, View)>, view: View, mut inner: std::sync::MutexGuard<Inner>) -> Result<Reply, String> {
+    let have = inner.globe.as_ref().is_some_and(|(v, _)| *v == view);
+    if !have && !inner.building {
+        let _ = want.send((i, view));
+        inner.building = true;
+    }
+    // A globe takes a tenth of a second or so: the one for this view is
+    // waited for a little, then the last one is sent while it comes.
+    let start = Instant::now();
+    let soon = start + Duration::from_secs(2);
+    let deadline = start + Duration::from_secs(120);
+    loop {
+        if let Some(e) = inner.error.take() {
+            return Err(e);
+        }
+        let exact = inner.globe.as_ref().is_some_and(|(v, _)| *v == view);
+        let now = Instant::now();
+        if exact || (inner.globe.is_some() && now >= soon) {
+            break;
+        }
+        if now >= deadline {
+            return Err("no globe yet".into());
+        }
+        let until = if inner.globe.is_some() { soon } else { deadline };
+        inner = style.ready.wait_timeout(inner, until.saturating_duration_since(now)).unwrap().0;
+        if !inner.building && !inner.globe.as_ref().is_some_and(|(v, _)| *v == view) {
+            let _ = want.send((i, view));
+            inner.building = true;
+        }
+    }
+    let (shown, picture) = inner.globe.clone().unwrap();
+    let ready = shown == view;
+    drop(inner);
+    let (body, kind) = match &*picture {
+        Picture::Bitmap(b) => (b.pbm(), "image/x-portable-bitmap"),
+        Picture::Text(t) => (text_runs(t).into_bytes(), "application/json"),
+    };
+    let mut reply = Reply::ok(kind, body);
+    reply.headers = format!("X-Scene: {}\r\nX-Shift: 0,0\r\n", if ready { "ready" } else { "building" });
     Ok(reply)
 }
 

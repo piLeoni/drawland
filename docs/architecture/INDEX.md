@@ -18,14 +18,14 @@ See [pipeline.md](pipeline.md).
 
 | Subsystem | Doc | Primary locations |
 |-----------|-----|-------------------|
-| Pipeline & units | [pipeline.md](pipeline.md) | `output.rs`, `projection.rs`, `frame.rs`, `warp.rs`, `units.rs`, `profile.rs` |
+| Pipeline & units | [pipeline.md](pipeline.md) | `output.rs`, `projection.rs`, `ortho.rs`, `frame.rs`, `warp.rs`, `units.rs`, `profile.rs` |
 | Graph & execution | [grammar-engine.md](grammar-engine.md) | `grammar.rs`, `grammar_run.rs`, `geom.rs`, `optimize.rs` |
 | The library and its faces | [profiles.md](profiles.md) | `drawland-graph/` (the library), `drawland-script/` (JS face, `drawland.d.ts`), `drawland-ts/`, `bindings/`, `configs/` |
 | Map data, host & bindings | [cli-data.md](cli-data.md) | `crates/drawland/` (library + CLI), `drawland-cli/`, `bindings/python`, `bindings/node`, `.github/workflows/build.yml`, `scripts/`, `osm.rs`, `tiles.rs`, `osm_cache.rs`, `geojson.rs` |
 | Fills & strokes | [fills-compose.md](fills-compose.md) | `fill.rs`, `budget.rs`, `optimize.rs`, `profile.rs`, `svg.rs`, penfill catalogue, `drawland-script/src/catalog_dts.rs` |
 | Isoline blob fills (design) | [isoline-blob-fills.md](isoline-blob-fills.md) | penfill (new generator), `fill.rs`, compose masks |
 | Terrain (burin) | [terrain-burin.md](terrain-burin.md) | `terrain.rs`, `contours.rs`, `burin.*` in profiles |
-| Screens (bitmap, text) | [screens.md](screens.md) | `paint.rs`, `grammar_run::paint`, `drawland-grid/` (`scene.rs`, `ui.rs`), `drawland/src/chrome.rs`, `drawland/src/view.rs`, `drawland/src/serve.rs` (+ `serve.html`, `edit.html`), `configs/terminal.js`, `configs/terminal-ascii.js`, `configs/1-bit.js`, `configs/1-bit-chart.js` |
+| Screens (bitmap, text) | [screens.md](screens.md) | `paint.rs`, `grammar_run::paint`, `drawland-grid/` (`scene.rs`, `ui.rs`), `drawland/src/chrome.rs`, `drawland/src/globe.rs`, `drawland/src/view.rs`, `drawland/src/serve.rs` (+ `serve.html`, `edit.html`), `configs/terminal.js`, `configs/terminal-ascii.js`, `configs/1-bit.js`, `configs/1-bit-chart.js` |
 | Labels & text | [labels.md](labels.md) | `labels.rs`, `text.rs`, `stroke_font.rs`, `google_fonts.rs`, `graticule.rs` |
 | Decisions | [decisions.md](decisions.md) | Rationale that spans crates |
 

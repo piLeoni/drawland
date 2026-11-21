@@ -30,6 +30,13 @@ impl Bitmap {
         self.black[y * self.width + x] != self.invert
     }
 
+    /// The pixel at `(x, y)` made black or white (before `invert`).
+    pub fn put(&mut self, x: usize, y: usize, black: bool) {
+        if x < self.width && y < self.height {
+            self.black[y * self.width + x] = black;
+        }
+    }
+
     fn set(&mut self, x: usize, y: usize, ink: Ink) {
         self.black[y * self.width + x] = ink == Ink::Black;
     }

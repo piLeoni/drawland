@@ -13,6 +13,7 @@ pub mod grammar;
 pub mod grammar_run;
 pub mod labels;
 pub mod optimize;
+pub mod ortho;
 pub mod osm;
 pub mod osm_cache;
 pub mod output;

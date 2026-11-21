@@ -83,6 +83,22 @@ impl Output {
         const PER_SIDE: usize = 16;
         let p = crate::projection::Projector::new(self);
         let (w, h) = (self.width_mm, self.height_mm);
+        // A globe: the ground as far from the centre as the page's edge
+        // reaches, the whole near side when the edge is off the globe.
+        if let Some(globe) = p.globe() {
+            let mut radius: f64 = 0.0;
+            for i in 0..PER_SIDE * 4 {
+                let t = (i % PER_SIDE) as f64 / PER_SIDE as f64;
+                let (x, y) = match i / PER_SIDE {
+                    0 => (w * t, 0.0),
+                    1 => (w, h * t),
+                    2 => (w * (1.0 - t), h),
+                    _ => (0.0, h * (1.0 - t)),
+                };
+                radius = radius.max(p.unproject(x, y).map(|(lon, lat)| globe.distance(lon, lat) + 0.5).unwrap_or(90.0));
+            }
+            return Some(globe.ground(radius));
+        }
         let edge = (0..PER_SIDE * 4).map(|i| {
             let t = (i % PER_SIDE) as f64 / PER_SIDE as f64;
             match i / PER_SIDE {

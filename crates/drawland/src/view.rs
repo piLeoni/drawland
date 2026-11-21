@@ -120,9 +120,19 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place) -> Result<(), String> {
             let (ansi, _) = show(&picture, &now(None, true, None));
             term.frame(&ansi);
             let t = Instant::now();
-            match drawer.paint_graph(&drawn.grammar, &Place::at(lat, lng), drawn.profile.dir(), &()) {
+            // Far out, a globe round the centre (`crate::globe`).
+            let far = crate::globe::far(drawn.grammar.output.scale.0, s.size());
+            let mut grammar = drawn.grammar.clone();
+            if far {
+                crate::globe::make(&mut grammar);
+            }
+            match drawer.paint_graph(&grammar, &Place::at(lat, lng), drawn.profile.dir(), &()) {
                 Ok(p) => {
-                    picture = Some(p.picture);
+                    let mut p = p.picture;
+                    if far {
+                        p.globe(crate::globe::radius(grammar.output.scale.0));
+                    }
+                    picture = Some(p);
                     error = None;
                     ms = Some(t.elapsed().as_millis() as u64);
                 }

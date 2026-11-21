@@ -58,6 +58,10 @@ The interface round a moving screen is drawn in the screen's own medium, not in 
 - Python and Node draw paper only for now (`Drawer::draw` refuses a screen); their faces have `paint`.
 - The web page does not paint screens yet. `drawland-grid` does no I/O and builds for WASM as it is; `Text::cell(x, y)` gives a page each cell's character and colours.
 
+## Far out: a globe
+
+As draw.land's page shows a globe far out, so do `view` and `serve` (`drawland/src/globe.rs`): when the screen's shorter side spans more than `FAR_KM` (4000 km), the graph is drawn in `+proj=ortho` round the view's centre (see [pipeline.md](pipeline.md)) at the view's own size, and what lies past the rim is cleared and the rim drawn (`Picture::globe`: white past it and a black ring on a bitmap; empty cells and a Braille ring on text), since a profile that fills the page as land would otherwise fill space too. A globe is a run of the graph, not a scene moved: `serve` builds one per view on its scene thread (shallow tiles, 50–200 ms), waits up to two seconds for the one asked for, and sends the last one meanwhile (`X-Scene: building`). Dragging turns the globe: the page's pan is web Mercator's, which at the centre is the globe's turn.
+
 ## Profiles
 
 `configs/terminal.js` (text, Venice), `configs/terminal-ascii.js` (text in plain ASCII, green phosphor), `configs/1-bit.js` (800 × 480 bitmap, Venice, a Nolli plan), `configs/1-bit-chart.js` (800 × 480, a sea chart: the sea solid, buildings in outline).

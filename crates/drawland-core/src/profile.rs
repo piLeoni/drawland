@@ -41,6 +41,7 @@ impl<'de> Deserialize<'de> for ProjectionMode {
         match text.trim() {
             "utm" => Ok(ProjectionMode::Utm),
             "webmercator" => Ok(ProjectionMode::Webmercator),
+            s if crate::ortho::Ortho::parse(s).is_some() => Ok(ProjectionMode::Proj(s.to_string())),
             s if s.contains("+proj=") => {
                 proj4rs::proj::Proj::from_proj_string(&ProjectionMode::proj_string(s, (0.0, 0.0)))
                     .map_err(|e| serde::de::Error::custom(format!("projection {s:?}: {e}")))?;

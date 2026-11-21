@@ -144,6 +144,8 @@ enum Base {
     Utm(Utm),
     Merc,
     Proj(Box<Proj>),
+    /// A globe (`+proj=ortho`), which proj4rs lacks.
+    Ortho(crate::ortho::Ortho),
 }
 
 /// lon/lat → output mm for one output.
@@ -177,6 +179,10 @@ impl Projector {
             ProjectionMode::Webmercator => webmercator(),
             // The profile checked the string when it was read; only a centre
             // the projection cannot reach is left to fail here.
+            ProjectionMode::Proj(template) if crate::ortho::Ortho::parse(&ProjectionMode::proj_string(template, output.center)).is_some() => {
+                let o = crate::ortho::Ortho::parse(&ProjectionMode::proj_string(template, output.center)).unwrap();
+                (Base::Ortho(o), o.forward(lon, lat), 1.0, 1.0)
+            }
             ProjectionMode::Proj(template) => match Proj::new(&ProjectionMode::proj_string(template, output.center)) {
                 Ok(p) => {
                     let k = 1.0 / p.units_per_m(lon, lat);
@@ -205,6 +211,7 @@ impl Projector {
             Base::Utm(u) => u.forward(lon, lat),
             Base::Merc => merc_forward(lon, lat),
             Base::Proj(p) => p.forward(lon, lat),
+            Base::Ortho(o) => o.forward(lon, lat),
         };
         let dx = (x - self.center.0) * self.sx;
         let dy = (y - self.center.1) * self.sy;
@@ -220,6 +227,7 @@ impl Projector {
         let (bx, by) = (self.center.0 + dx / self.sx, self.center.1 + dy / self.sy);
         match &self.base {
             Base::Proj(p) => p.inverse(bx, by),
+            Base::Ortho(o) => o.inverse(bx, by),
             Base::Merc => Some(((bx / WGS84_A).to_degrees(), (2.0 * (by / WGS84_A).exp().atan() - std::f64::consts::FRAC_PI_2).to_degrees())),
             Base::Utm(_) => self.locate(x, y),
         }
@@ -253,6 +261,24 @@ impl Projector {
         }
         let (px, py) = self.project(lon, lat);
         ((px - x).hypot(py - y) < 1e-4).then_some((lon, lat))
+    }
+
+    /// The part of a lon/lat geometry the projection shows: a globe's near
+    /// side, cut at the horizon ([`crate::ortho::Ortho::visible`]); `None`
+    /// when the projection shows the whole of it.
+    pub fn visible(&self, g: &geo::Geometry<f64>) -> Option<geo::Geometry<f64>> {
+        match &self.base {
+            Base::Ortho(o) => Some(o.visible(g)),
+            _ => None,
+        }
+    }
+
+    /// The globe, when the projection is one: it shows half the Earth.
+    pub fn globe(&self) -> Option<&crate::ortho::Ortho> {
+        match &self.base {
+            Base::Ortho(o) => Some(o),
+            _ => None,
+        }
     }
 
     pub fn project_geometry<G: MapCoords<f64, f64, Output = G>>(&self, g: &G) -> G {

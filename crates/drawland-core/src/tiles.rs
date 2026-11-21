@@ -73,7 +73,11 @@ pub fn plan(output: &Output, selectors: &[String], osm: Option<&[Feature]>) -> R
     }
     let mut tiles = Tiles::new(&output.query_polygon(), selectors, osm)?;
     tiles.set_zoom(output.tile_zoom);
-    tiles.pieces = output.pole_on_page(&crate::projection::Projector::new(output)).is_some();
+    // Round a pole each tile's pieces stay apart, or an area joined across
+    // every longitude meets itself once projected. A globe cuts its areas
+    // in 3D at the horizon, so they are joined as on any page: no seams.
+    let projector = crate::projection::Projector::new(output);
+    tiles.pieces = output.pole_on_page(&projector).is_some() && projector.globe().is_none();
     Ok(Some(tiles))
 }
 

@@ -440,6 +440,10 @@ pub fn named(features: &[Feature], keys: &[String], page: f64) -> Vec<Named> {
             let rank = (0.25 + (area / page).sqrt()).min(1.0);
             out.push(Named { text, rank, extent: area.sqrt(), shape: Shape::Area(poly), feature: i });
         } else if let geo::Geometry::Point(p) = &f.geometry {
+            // A point the projection cannot show (a globe's far side) is not named.
+            if !(p.x().is_finite() && p.y().is_finite()) {
+                continue;
+            }
             out.push(Named { text, rank: pin_rank(f), extent: 1.0, shape: Shape::Pin(p.0), feature: i });
         } else {
             let class = f.tag("class").or_else(|| f.tag("highway")).unwrap_or("").to_string();

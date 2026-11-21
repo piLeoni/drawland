@@ -565,7 +565,11 @@ interface OutputOptions {
   scale?: `1:${number}` | `${number}m` | `${number}cm` | number
   /** Degrees clockwise. */
   bearing?: number
-  /** `"webmercator"` (the web map, north up), `"utm"` (true distances), or a PROJ string with `{lat}` and `{lng}`. */
+  /**
+   * `"webmercator"` (the web map, north up), `"utm"` (true distances), or a
+   * PROJ string with `{lat}` and `{lng}`. `"+proj=ortho +lat_0={lat}
+   * +lon_0={lng}"` is a globe: the near side of the Earth, cut at its rim.
+   */
   projection?: "webmercator" | "utm" | `+proj=${string}`
   /** Blank margin inside the paper's edge (and round every sheet when cut): one length, or across and down. */
   padding?: Length | [Length, Length]

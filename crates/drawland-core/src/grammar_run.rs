@@ -314,8 +314,14 @@ fn run_graph(
         features
             .into_par_iter()
             .map(|mut f| {
-                let mut g = projector.project_geometry(&f.geometry);
-                if pole.is_some() {
+                // A globe shows its near side: the rest is cut off first.
+                let seen = projector.visible(&f.geometry);
+                let mut g = projector.project_geometry(seen.as_ref().unwrap_or(&f.geometry));
+                // Round a pole, an area meets itself along the antimeridian
+                // once projected; a globe's cut areas are whole already, and
+                // a lake cut at the rim lies along the sea's own rim there,
+                // which a union would fill.
+                if pole.is_some() && seen.is_none() {
                     g = mended(g);
                 }
                 f.geometry = warp.bend(w, h, &g);
@@ -464,7 +470,8 @@ struct Engine<'a> {
 impl Engine<'_> {
     /// lon/lat → output mm, warped: what every host feature went through.
     fn warp_project(&self, g: &geo::Geometry<f64>) -> geo::Geometry<f64> {
-        self.warp.bend(self.of.width_mm, self.of.height_mm, &self.projector.project_geometry(g))
+        let seen = self.projector.visible(g);
+        self.warp.bend(self.of.width_mm, self.of.height_mm, &self.projector.project_geometry(seen.as_ref().unwrap_or(g)))
     }
 }
 
@@ -488,14 +495,14 @@ fn arctic_cap(tiles: &[Feature], projector: &crate::projection::Projector) -> Op
     })?;
     // A little past the tiles' edge, so the cap overlaps the sea it joins.
     const EDGE: f64 = 85.0;
-    let ring: Vec<Coord<f64>> = (0..=720)
-        .map(|i| {
-            let (x, y) = projector.project(-180.0 + i as f64 * 0.5, EDGE);
-            Coord { x, y }
-        })
-        .collect();
+    // In lon/lat, then as every feature is: a globe cuts it at its horizon.
+    let ring: Vec<Coord<f64>> = (0..=720).map(|i| Coord { x: -180.0 + i as f64 * 0.5, y: EDGE }).collect();
+    let cap = geo::Geometry::Polygon(Polygon::new(LineString::new(ring), vec![]));
+    let seen = projector.visible(&cap);
+    let projected = projector.project_geometry(seen.as_ref().unwrap_or(&cap));
+    let geometry = if seen.is_some() { projected } else { mended(projected) };
     Some(Feature {
-        geometry: geo::Geometry::Polygon(Polygon::new(LineString::new(ring), vec![])),
+        geometry,
         id: -1,
         ..ocean.clone()
     })

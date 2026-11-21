@@ -139,7 +139,9 @@ async function pump() {
     // The map in the frame is moved by whole cells; it is this far (units)
     // short of the view asked for.
     const [dx, dy] = (r.headers.get("X-Shift") || "0,0").split(",").map(Number)
-    shown = { ...frame, mx, my, dx, dy, per: perUnit(at), ux: g.ux, uy: g.uy, cssW: g.cssW, cssH: g.cssH }
+    // A bitmap is drawn at its own size, whatever size was asked for.
+    const cssW = bitmap ? frame.canvas.width * g.ux : g.cssW, cssH = bitmap ? frame.canvas.height * g.uy : g.cssH
+    shown = { ...frame, mx, my, dx, dy, per: perUnit(at), ux: g.ux, uy: g.uy, cssW, cssH }
     lastMs = Math.round(performance.now() - t0)
     error = ""
     draw()

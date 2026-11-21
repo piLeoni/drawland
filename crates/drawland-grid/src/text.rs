@@ -109,6 +109,13 @@ impl Text {
         Some(&mut self.cells[y as usize * self.width + x as usize])
     }
 
+    /// The cell at `(x, y)` emptied: no character, no colour.
+    pub fn clear(&mut self, x: usize, y: usize) {
+        if x < self.width && y < self.height {
+            self.cells[y * self.width + x] = Cell::BLANK;
+        }
+    }
+
     /// An interface laid over the cells, in `palette`'s colours; where it
     /// has no cell the map shows.
     pub fn overlay(&mut self, chrome: &crate::ui::Chrome, palette: &crate::ui::Palette) {

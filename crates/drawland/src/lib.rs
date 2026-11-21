@@ -19,6 +19,7 @@
 pub mod chrome;
 pub mod cli;
 mod fonts;
+pub mod globe;
 mod http;
 mod term;
 mod serve;
