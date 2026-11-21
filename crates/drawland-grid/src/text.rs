@@ -30,6 +30,10 @@ enum Kind {
     Ascii(u8),
 }
 
+/// Space round a globe, and its stars.
+pub const SPACE: Rgb = Rgb(0, 0, 0);
+const STAR: Rgb = Rgb(0x8a, 0x92, 0xa6);
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cell {
     kind: Kind,
@@ -131,6 +135,13 @@ impl Text {
             let fg = cell.fg.unwrap_or(Rgb(0x6a, 0x7a, 0x90));
             let lift = |c: u8| (c as f64 + (255.0 - c as f64) * 0.55).round() as u8;
             cell.fg = Some(Rgb(lift(fg.0), lift(fg.1), lift(fg.2)));
+        }
+    }
+
+    /// The cell at `(x, y)` made space: black, with a star or none.
+    pub fn space(&mut self, x: usize, y: usize, star: Option<char>) {
+        if let Some(cell) = self.at(x as i64, y as i64) {
+            *cell = Cell { kind: star.map_or(Kind::Blank, Kind::Char), fg: Some(STAR), bg: Some(SPACE) };
         }
     }
 

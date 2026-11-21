@@ -1,10 +1,11 @@
-// 1-bit: the map in black and white pixels, every pixel one or the other
+// 1-bit day: the map in black and white pixels, every pixel one or the other
 // (800 × 480). Buildings solid black, like Nolli's plan of Rome, so the
 // streets are the white between them; water in waves, parks stippled;
-// roads with a white halo where they cross the black; names in a pixel
-// font, each with a pixel of clear screen round its letters.
+// main roads white between black edges; names in a pixel
+// font, each with a pixel of clear screen round its letters. The night is
+// `1-bit-night.js`.
 // `drawland map configs/1-bit.js -o map.png`.
-title("1-bit")
+title("1-bit day")
 
 // ---------------------------------------------------------------------------
 // 1. PARAMETERS & STYLE PALETTE
@@ -50,7 +51,10 @@ paint({ id: "parks", from: parks, fill: { pattern: "stipple" } })
 paint({ id: "buildings", from: buildings, fill: { pattern: "solid" } })
 paint({ id: "streets", from: minor, halo: 1 })
 paint({ id: "rail", from: rail, line: { dash: [4, 2] }, halo: 1 })
-paint({ id: "roads", from: major, line: { width: 3 }, halo: 1 })
+// Main roads white between black edges: a black line two pixels wider,
+// then the road over it in white.
+paint({ id: "road_edges", from: major, line: { width: 5 }, halo: 1 })
+paint({ id: "roads", from: major, line: { width: 3, ink: "white" } })
 
 paint({ id: "street_names", from: streetNames, text: { font: "spleen-5x8", spacing: 220 }, halo: 1 })
 paint({ id: "water_names", from: features.tiles("water_name:*"), text: { font: "spleen-6x12" }, halo: 1 })

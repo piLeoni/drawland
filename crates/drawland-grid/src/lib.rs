@@ -102,13 +102,12 @@ impl Picture {
         }
     }
 
-    /// A globe's picture (an `ortho` output) with everything past its rim
-    /// cleared, the rim drawn: the globe is `radius` units round the
-    /// screen's centre. Past the rim the profile's background (a page
-    /// filled as land) would stand for ground there is none of. With
+    /// A globe's picture (an `ortho` output) with space past its rim: black,
+    /// a few stars, the rim drawn (white on a bitmap, a grey Braille ring on
+    /// text). The globe is `radius` units round the screen's centre. With
     /// `names` (the same screen's names painted alone), the names run on
-    /// past the rim instead of being cut by it, and the rim gives way to
-    /// them.
+    /// past the rim, white on the black, instead of being cut by it, and
+    /// the rim gives way to them.
     pub fn globe(&mut self, radius: f64, names: Option<&Picture>) {
         match (self, names) {
             (Picture::Bitmap(b), names) => {
@@ -123,14 +122,19 @@ impl Picture {
                 let near = |x: usize, y: usize| {
                     (x.saturating_sub(1)..=(x + 1).min(w - 1)).any(|i| (y.saturating_sub(1)..=(y + 1).min(h - 1)).any(|j| ink(i, j)))
                 };
+                // `put` takes the pixel before the screen's inversion: shown
+                // black is `!invert`.
+                let invert = b.invert;
+                let shown = |black: bool| black != invert;
                 let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
                 for y in 0..h {
                     for x in 0..w {
                         let d = (x as f64 + 0.5 - cx).hypot(y as f64 + 0.5 - cy);
                         if d > radius + 0.5 {
-                            b.put(x, y, ink(x, y));
+                            let white = ink(x, y) || star(x, y, 211);
+                            b.put(x, y, shown(!white));
                         } else if d > radius - 0.5 && !near(x, y) {
-                            b.put(x, y, true);
+                            b.put(x, y, shown(false));
                         }
                     }
                 }
@@ -146,9 +150,12 @@ impl Picture {
                     for x in 0..t.width {
                         let d = (x as f64 + 0.5 - cx).hypot((y as f64 + 0.5) * 2.0 - cy);
                         if d > radius + 0.5 {
-                            match names {
-                                Some(n) => t.put(x, y, n.cell(x, y).clone()),
-                                None => t.clear(x, y),
+                            match names.map(|n| *n.cell(x, y)).filter(|c| c.char() != ' ') {
+                                Some(mut c) => {
+                                    c.bg = Some(text::SPACE);
+                                    t.put(x, y, c);
+                                }
+                                None => t.space(x, y, star(x, y, 61).then(|| if star(x, y, 7) { '+' } else { '·' })),
                             }
                         }
                     }
@@ -161,7 +168,8 @@ impl Picture {
                     let (x, y) = ((cx + radius * a.cos()) * 2.0, (cy + radius * a.sin()) * 2.0);
                     let cell = ((x / 2.0) as usize, (y / 4.0) as usize);
                     let named = names.is_some_and(|n| n.cell(cell.0.min(n.width - 1), cell.1.min(n.height - 1)).char() != ' ');
-                    if cell.0 < t.width && cell.1 < t.height && t.cell(cell.0, cell.1).char() == ' ' && !named {
+                    let empty = cell.0 < t.width && cell.1 < t.height && matches!(t.cell(cell.0, cell.1).char(), ' ' | '·' | '+');
+                    if empty && !named {
                         t.dot(x as i64, y as i64, Some(rim));
                     }
                 }
@@ -177,6 +185,16 @@ impl Picture {
             Picture::Text(t) => t.ansi(),
         }
     }
+}
+
+/// Whether a star shines at `(x, y)`: one place in about `one_in`, the
+/// same each frame.
+fn star(x: usize, y: usize, one_in: u64) -> bool {
+    let mut h = (x as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ (y as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f);
+    h ^= h >> 31;
+    h = h.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    h ^= h >> 29;
+    h % one_in == 0
 }
 
 /// Where the screen's top-left dot is in the world's dots: what patterns

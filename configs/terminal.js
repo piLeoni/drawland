@@ -1,9 +1,10 @@
-// Terminal: the map as character cells in colour. Water in tilde waves on
+// Terminal night: the map as character cells in colour (the day is
+// `terminal-day.js`). Water in tilde waves on
 // deep blue, buildings in quarter blocks (the calli show between them),
 // main roads in box drawing joined where they cross, the rest in Braille,
 // the names a letter a cell. `drawland map configs/terminal.js -o -` prints
 // it; `drawland view configs/terminal.js` moves round it.
-title("Terminal")
+title("Terminal night")
 
 // ---------------------------------------------------------------------------
 // 1. PARAMETERS & STYLE PALETTE
