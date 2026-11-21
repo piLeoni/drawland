@@ -24,7 +24,7 @@ pub mod text;
 pub mod ui;
 
 pub use bitmap::Bitmap;
-pub use scene::{Scene, View};
+pub use scene::{Recall, Scene, View};
 pub use text::Text;
 
 use drawland_core::grammar_run::{PaintShape, Painted};
@@ -166,6 +166,12 @@ pub fn origin(output: &Output, screen: &Screen) -> (i64, i64) {
 
 /// The layers, bottom first, painted on `screen`; `origin` from [`origin`].
 pub fn render(screen: &Screen, origin: (i64, i64), layers: &[Painted]) -> Picture {
+    render_hinted(screen, origin, layers, &place::Hints::new()).0
+}
+
+/// [`render`], each name first tried where `hints` say it was; with the
+/// names as placed.
+pub fn render_hinted(screen: &Screen, origin: (i64, i64), layers: &[Painted], hints: &place::Hints) -> (Picture, place::Placed) {
     let cells = screen.kind == ScreenKind::Text;
     let unit = screen.cell();
     let size = (screen.width as i64, screen.height as i64);
@@ -185,11 +191,12 @@ pub fn render(screen: &Screen, origin: (i64, i64), layers: &[Painted]) -> Pictur
             _ => None,
         })
         .collect();
-    let placed = place::place(&texts, size);
-    match screen.kind {
+    let placed = place::place(&texts, size, hints);
+    let picture = match screen.kind {
         ScreenKind::Bitmap => {
             Picture::Bitmap(bitmap::paint(layers, &placed, screen.width as usize, screen.height as usize, screen.invert, origin))
         }
         ScreenKind::Text => Picture::Text(text::paint(layers, &placed, screen.width as usize, screen.height as usize, origin)),
-    }
+    };
+    (picture, placed)
 }

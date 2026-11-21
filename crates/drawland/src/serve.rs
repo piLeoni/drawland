@@ -29,7 +29,8 @@ use crate::{Drawer, Place, Profile};
 use drawland_core::grammar::Grammar;
 use drawland_core::paint::{Screen, ScreenKind};
 use drawland_grid::ui::{bitmap_font, Chrome, Palette, Pixels};
-use drawland_grid::{Picture, Scene, View};
+use drawland_grid::{Picture, Recall, Scene, View};
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -58,6 +59,9 @@ struct Inner {
     scene: Option<Arc<Scene>>,
     /// Far out, the last globe painted and the view it shows.
     globe: Option<(View, Arc<Picture>)>,
+    /// Where the names were on each page's last frame (by its `who`), so
+    /// they hold still as its map zooms.
+    recall: HashMap<String, Recall>,
     error: Option<String>,
     building: bool,
     /// Counts the profile's readings: a scene built from an older one is
@@ -74,7 +78,7 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place, port: u16) -> Result<(),
     let mut list = vec![Style {
         name: name_of(path),
         path: path.to_path_buf(),
-        inner: Mutex::new(Inner { profile, grammar: grammar.clone(), screen, scene: None, globe: None, error: None, building: false, generation: 0 }),
+        inner: Mutex::new(Inner { profile, grammar: grammar.clone(), screen, scene: None, globe: None, recall: HashMap::new(), error: None, building: false, generation: 0 }),
         ready: Condvar::new(),
     }];
     for s in chrome::styles(path, Some(kind)).into_iter().skip(1) {
@@ -86,7 +90,7 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place, port: u16) -> Result<(),
             Ok((profile, grammar, screen)) if screen.kind == kind => list.push(Style {
                 name: s.name,
                 path: s.path,
-                inner: Mutex::new(Inner { profile, grammar, screen, scene: None, globe: None, error: None, building: false, generation: 0 }),
+                inner: Mutex::new(Inner { profile, grammar, screen, scene: None, globe: None, recall: HashMap::new(), error: None, building: false, generation: 0 }),
                 ready: Condvar::new(),
             }),
             Ok(_) => {}
@@ -305,7 +309,7 @@ fn frame(styles: &Styles, want: &mpsc::Sender<(usize, View)>, q: &Query) -> Resu
     let mut s = inner.screen;
     s.width = (q.number("w")? as u32).clamp(1, 4096);
     s.height = (q.number("h")? as u32).clamp(1, 4096);
-    let view = View::at(q.number("lng")?, q.number("lat")?, q.number("scale")?.clamp(100.0, 1e8), s);
+    let view = View::at(q.number("lng")?, q.number("lat")?, crate::globe::clamp(q.number("scale")?, s.size()), s);
     if crate::globe::far_view(&view) {
         return globe_frame(style, i, want, view, inner);
     }
@@ -327,8 +331,16 @@ fn frame(styles: &Styles, want: &mpsc::Sender<(usize, View)>, q: &Query) -> Resu
     }
     let scene = inner.scene.clone().unwrap();
     let building = inner.building;
+    let who = q.get("who").unwrap_or_default();
+    let mut recall = inner.recall.remove(&who).unwrap_or_default();
     drop(inner);
-    let (picture, (dx, dy)) = scene.render(&view);
+    let (picture, (dx, dy)) = scene.render_recalling(&view, &mut recall);
+    let mut inner = style.inner.lock().unwrap();
+    // Pages come and go: a few dozen remembered.
+    if inner.recall.len() >= 64 {
+        inner.recall.clear();
+    }
+    inner.recall.insert(who, recall);
     let body = match &picture {
         Picture::Bitmap(b) => b.pbm(),
         Picture::Text(t) => text_runs(t).into_bytes(),

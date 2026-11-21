@@ -26,6 +26,8 @@
 // drawn in the same cells or pixels, with the zones a press acts on.
 const START = /*START*/null
 const R = 6378137
+// This page, to the server: where its names were (they hold still as it zooms).
+const WHO = Math.random().toString(36).slice(2)
 const main = document.getElementById("main")
 const mapCanvas = document.getElementById("map"), chromeCanvas = document.getElementById("chrome")
 const ctx = mapCanvas.getContext("2d"), cctx = chromeCanvas.getContext("2d")
@@ -101,13 +103,20 @@ function pan(dxCss, dyCss) {
   changed()
 }
 
+// From ten centimetres a unit to the whole globe on the screen with room
+// round it (a 0.85 share of its shorter side), as `globe::clamp` holds it.
+function clampScale(scale, g) {
+  const units = Math.max(1, Math.min(g.w, bitmap ? g.h : 2 * g.h))
+  return Math.max(100, Math.min(Math.max(100, 2 * R * 1000 / (0.85 * units)), scale))
+}
+
 // Zoom by `factor` (2 is twice as near), the point under (cx, cy) CSS px held still.
 function zoomAt(factor, cx, cy) {
   const g = grid()
   const ox = (cx - g.x - g.cssW / 2) / g.ux, oy = (cy - g.y - g.cssH / 2) / g.uy
   const [x, y] = mercator(state.lat, state.lng), per = perUnit(state)
   const px = x + ox * per, py = y - oy * per
-  state.scale = Math.max(100, Math.min(1e8, state.scale / factor))
+  state.scale = clampScale(state.scale / factor, g)
   // The latitude moves with the centre, and with it the Mercator metres a unit.
   for (let i = 0; i < 2; i++) {
     const per2 = perUnit(state)
@@ -132,7 +141,7 @@ async function pump() {
   const [mx, my] = mercator(at.lat, at.lng)
   const t0 = performance.now()
   try {
-    const r = await fetch(`/frame?style=${encodeURIComponent(ui.style)}&lng=${at.lng}&lat=${at.lat}&scale=${at.scale}&w=${g.w}&h=${g.h}`)
+    const r = await fetch(`/frame?style=${encodeURIComponent(ui.style)}&who=${WHO}&lng=${at.lng}&lat=${at.lat}&scale=${at.scale}&w=${g.w}&h=${g.h}`)
     if (!r.ok) throw new Error(await r.text())
     building = r.headers.get("X-Scene") === "building"
     const frame = bitmap ? fromPbm(new Uint8Array(await r.arrayBuffer())) : fromRuns(await r.json(), g)

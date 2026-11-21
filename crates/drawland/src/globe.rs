@@ -35,6 +35,24 @@ pub fn make(grammar: &mut Grammar) {
     grammar.output.projection = ProjectionMode::Proj("+proj=ortho +lat_0={lat} +lon_0={lng}".into());
 }
 
+/// The share of the screen's shorter side the whole globe takes at the
+/// farthest zoom: the rest is room round it.
+pub const WHOLE: f64 = 0.85;
+
+/// The nearest a screen zooms in: ten centimetres a unit.
+pub const NEAREST: f64 = 100.0;
+
+/// The farthest a screen `units` across and down zooms out, mm a unit: the
+/// whole globe on it, with room round it, whatever its size.
+pub fn farthest((w, h): (f64, f64)) -> f64 {
+    2.0 * RADIUS * 1000.0 / (WHOLE * w.min(h).max(1.0))
+}
+
+/// `scale` held between [`NEAREST`] and [`farthest`].
+pub fn clamp(scale: f64, units: (f64, f64)) -> f64 {
+    scale.clamp(NEAREST, farthest(units).max(NEAREST))
+}
+
 /// The globe's radius in units, a unit spanning `scale` mm.
 pub fn radius(scale: f64) -> f64 {
     RADIUS / (scale / 1000.0)
@@ -52,5 +70,11 @@ mod tests {
         assert!(far_view(&View::at(12.0, 45.0, 20_000_000.0, screen)), "20 km a pixel: 9600 km");
         // 100 km a pixel: the globe is 128 pixels round.
         assert!((radius(100_000_000.0) - 63.78).abs() < 0.01);
+        // As far out as it goes, the whole globe is on any screen, and far.
+        for size in [(128.0, 64.0), (800.0, 480.0), (120.0, 88.0), (4096.0, 4096.0)] {
+            let s = farthest(size);
+            assert!((2.0 * radius(s) - WHOLE * size.0.min(size.1)).abs() < 1e-6);
+            assert!(far(s, size) && clamp(1e12, size) == s && clamp(1.0, size) == NEAREST);
+        }
     }
 }

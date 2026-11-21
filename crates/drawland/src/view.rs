@@ -78,6 +78,8 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place) -> Result<(), String> {
     // The last map painted, and whether the next pass must paint again.
     let mut picture: Option<Picture> = None;
     let mut stale = true;
+    // Where the names were, so they hold still as the map zooms.
+    let mut recall = drawland_grid::Recall::default();
     let mut error: Option<String> = None;
     let mut ms = None;
     // Where a drag last was, in cells.
@@ -126,7 +128,7 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place) -> Result<(), String> {
             if far {
                 crate::globe::make(&mut grammar);
             }
-            match drawer.paint_graph(&grammar, &Place::at(lat, lng), drawn.profile.dir(), &()) {
+            match drawer.paint_recalling(&grammar, &Place::at(lat, lng), drawn.profile.dir(), &(), &mut recall) {
                 Ok(p) => {
                     let mut p = p.picture;
                     if far {
@@ -232,8 +234,9 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place) -> Result<(), String> {
         }
         if zoom != 0.0 {
             let s = drawn.grammar.output.scale.0 * 2f64.powf(-zoom);
-            // From ten centimetres a unit to a hundred kilometres.
-            drawn.grammar.output.scale.0 = s.clamp(100.0, 100_000_000.0);
+            // From ten centimetres a unit to the whole globe on the screen.
+            let units = (drawn.grammar.output.width.0, drawn.grammar.output.height.0);
+            drawn.grammar.output.scale.0 = crate::globe::clamp(s, units);
             stale = true;
         }
         stale |= again;

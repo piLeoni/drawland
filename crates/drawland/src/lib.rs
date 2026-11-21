@@ -327,8 +327,23 @@ impl Drawer {
     /// A graph painted at `place` on its screen; files it names are read
     /// from `dir`.
     pub fn paint_graph(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress) -> Result<Painting, String> {
+        self.paint_recalling(grammar, place, dir, progress, &mut drawland_grid::Recall::default())
+    }
+
+    /// [`Drawer::paint_graph`] for a screen that moves: each name first
+    /// tried where it was on the ground last time (`recall`, kept by the
+    /// caller from paint to paint), so names hold still as the map zooms.
+    /// Off web Mercator, names are placed afresh.
+    pub fn paint_recalling(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress, recall: &mut drawland_grid::Recall) -> Result<Painting, String> {
         let (output, screen, layers) = self.painted(grammar, place, dir, progress)?;
-        let picture = drawland_grid::render(&screen, drawland_grid::origin(&output, &screen), &layers);
+        let origin = drawland_grid::origin(&output, &screen);
+        let picture = match drawland_grid::View::of(&output, screen) {
+            Some(view) => recall.render(&view, origin, &layers),
+            None => {
+                *recall = drawland_grid::Recall::default();
+                drawland_grid::render(&screen, origin, &layers)
+            }
+        };
         Ok(Painting { title: grammar.title.clone(), picture })
     }
 

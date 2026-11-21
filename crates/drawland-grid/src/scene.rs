@@ -9,6 +9,7 @@
 //! scaled at its centre, so a view of it is the same geometry moved and
 //! scaled.
 
+use crate::place::{Hints, Placed};
 use crate::Picture;
 use drawland_core::grammar_run::{PaintShape, Painted};
 use drawland_core::labels::{Named, Shape};
@@ -16,6 +17,7 @@ use drawland_core::output::Output;
 use drawland_core::paint::Screen;
 use drawland_core::profile::ProjectionMode;
 use geo::{BoundingRect, Coord, LineString, MapCoords, MultiPolygon, Polygon, Rect};
+use std::collections::HashMap;
 
 const R: f64 = 6_378_137.0;
 
@@ -73,6 +75,41 @@ impl View {
     }
 }
 
+/// Where the names were on the ground, web Mercator metres, by layer and
+/// text: kept from frame to frame by whoever paints them
+/// ([`Scene::render_recalling`]).
+#[derive(Clone, Debug, Default)]
+pub struct Recall(HashMap<(usize, String), Vec<(f64, f64)>>);
+
+impl Recall {
+    /// Where the names were, in grid units of a picture (`grid` from web
+    /// Mercator metres to its grid units).
+    pub fn hints(&self, grid: impl Fn((f64, f64)) -> (f64, f64)) -> Hints {
+        self.0.iter().map(|(key, at)| (key.clone(), at.iter().map(|&m| grid(m)).collect())).collect()
+    }
+
+    /// Where the names are now (`ground` from grid units to web Mercator
+    /// metres), forgetting where they were.
+    pub fn keep(&mut self, placed: &Placed, ground: impl Fn((f64, f64)) -> (f64, f64)) {
+        self.0.clear();
+        for run in &placed.runs {
+            self.0.entry((run.layer, run.text.iter().collect())).or_default().push(ground(run.at));
+        }
+    }
+
+    /// A picture of `view` painted from its own layers ([`crate::render`]),
+    /// each name first tried where it was.
+    pub fn render(&mut self, view: &View, origin: (i64, i64), layers: &[Painted]) -> Picture {
+        let (w, h) = view.screen.size();
+        let (cw, ch) = view.screen.cell();
+        let (x0, y0) = (view.center.0 - w / 2.0 * view.per_unit, view.center.1 + h / 2.0 * view.per_unit);
+        let grid = |(mx, my): (f64, f64)| ((mx - x0) / view.per_unit / cw, (y0 - my) / view.per_unit / ch);
+        let (picture, placed) = crate::render_hinted(&view.screen, origin, layers, &self.hints(grid));
+        self.keep(&placed, |(gx, gy)| (x0 + gx * cw * view.per_unit, y0 - gy * ch * view.per_unit));
+        picture
+    }
+}
+
 /// The layers of a wide screen, each piece with its box, to be painted as
 /// any view of it.
 #[derive(Clone, Debug)]
@@ -123,6 +160,12 @@ impl Scene {
     /// their places on it from one frame to the next, and a host shows the
     /// picture moved by this much to put it where the view is.
     pub fn render(&self, view: &View) -> (Picture, (f64, f64)) {
+        self.render_recalling(view, &mut Recall::default())
+    }
+
+    /// [`Scene::render`], each name first tried where it was on the ground
+    /// in the frame before (`recall`), which then holds where they are now.
+    pub fn render_recalling(&self, view: &View, recall: &mut Recall) -> (Picture, (f64, f64)) {
         let k = self.view.per_unit / view.per_unit;
         let (sw, sh) = self.view.screen.size();
         let (vw, vh) = view.screen.size();
@@ -171,7 +214,20 @@ impl Scene {
                 Painted { id: l.id.clone(), look: l.look.clone(), halo: l.halo, shape }
             })
             .collect();
-        (crate::render(&view.screen, origin, &layers), (exact.x - t.x, exact.y - t.y))
+        // Grid units on this screen to web Mercator metres and back, through
+        // the scene's units (`to` and its inverse).
+        let (sx, sy) = (self.view.center.0 - sw / 2.0 * self.view.per_unit, self.view.center.1 + sh / 2.0 * self.view.per_unit);
+        let ground = |(gx, gy): (f64, f64)| {
+            let (ux, uy) = ((gx * cw - t.x) / k, (gy * ch - t.y) / k);
+            (sx + ux * self.view.per_unit, sy - uy * self.view.per_unit)
+        };
+        let grid = |(mx, my): (f64, f64)| {
+            let (ux, uy) = ((mx - sx) / self.view.per_unit, (sy - my) / self.view.per_unit);
+            ((ux * k + t.x) / cw, (uy * k + t.y) / ch)
+        };
+        let (picture, placed) = crate::render_hinted(&view.screen, origin, &layers, &recall.hints(grid));
+        recall.keep(&placed, ground);
+        (picture, (exact.x - t.x, exact.y - t.y))
     }
 }
 
@@ -230,5 +286,36 @@ mod tests {
         assert_eq!(at.tile_zoom(), 15);
         assert!(View { per_unit: at.per_unit * 64.0, ..at }.tile_zoom() == 9);
         assert!(scene.covers(&same) && !scene.covers(&near) && !scene.covers(&View { center: (at.center.0 + 40.0 * at.per_unit, at.center.1), ..same }));
+    }
+
+    #[test]
+    fn a_name_holds_its_ground_as_the_map_zooms() {
+        let wide = Screen { kind: ScreenKind::Text, width: 180, height: 60, invert: false };
+        let small = Screen { width: 60, height: 20, ..wide };
+        let at = View::at(12.0, 45.0, 3000.0, wide);
+        // A long road, a little crooked, from the screen's left to past its right.
+        let pts: Vec<Coord<f64>> = (0..=21).map(|i| Coord { x: 72.0 + i as f64 * 5.0, y: 61.0 + if i % 2 == 0 { 0.0 } else { 0.3 } }).collect();
+        let named = Named { text: "Calle Lunga".into(), rank: 0.5, extent: 1.0, shape: Shape::Road(pts), feature: 0 };
+        let look = Look::Text(drawland_core::paint::TextPaint { spacing: 1000, ..Default::default() });
+        let scene = Scene::new(at, vec![Painted { id: "n".into(), look, halo: Halo(0, 0), shape: PaintShape::Names(vec![named]) }]);
+        // Where the name starts on the screen, in columns from its middle.
+        let start = |v: &View, recall: &mut Recall| match scene.render_recalling(v, recall).0 {
+            Picture::Text(t) => t.txt().lines().find_map(|l| l.find("Calle").map(|i| l[..i].chars().count() as f64 - 30.0)).unwrap(),
+            _ => unreachable!(),
+        };
+        let (mut kept, mut fresh) = (Recall::default(), 0);
+        let mut v = View { screen: small, ..at };
+        let mut was = start(&v, &mut kept);
+        for _ in 0..8 {
+            let k = 2f64.powf(0.125);
+            v.per_unit /= k;
+            // The name's middle, five and a half letters on, moved with the ground.
+            let want = (was + 5.5) * k - 5.5;
+            let now = start(&v, &mut kept);
+            assert!((now - want).abs() <= 1.0, "kept: {now} for {want}");
+            fresh += ((start(&v, &mut Recall::default()) - want).abs() > 1.0) as usize;
+            was = now;
+        }
+        assert!(fresh > 0, "unkept, the name hops");
     }
 }
