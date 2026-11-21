@@ -86,10 +86,18 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place) -> Result<(), String> {
     let mut drag: Option<(i64, i64)> = None;
     loop {
         let (cols, rows) = terminal::size();
+        // The map is left of the column while it is open, so a globe is
+        // round in what is seen of it.
+        let map_cols = if ui.column {
+            let n = Now { lat, lng, scale: drawn.grammar.output.scale.0, kind: drawn.screen.kind, size: (cols, rows), screen: (drawn.screen.width, drawn.screen.height), ms: None, loading: false, error: None };
+            Chrome::lay(&chrome::model(&ui, &styles, &n, Host::Terminal), cols as usize, rows as usize).free as u32
+        } else {
+            cols
+        };
         let mut s = drawn.screen;
         (s.width, s.height) = match s.kind {
-            ScreenKind::Text => (cols, rows),
-            ScreenKind::Bitmap => (cols * CELL_DOTS.0, rows * CELL_DOTS.1),
+            ScreenKind::Text => (map_cols, rows),
+            ScreenKind::Bitmap => (map_cols * CELL_DOTS.0, rows * CELL_DOTS.1),
         };
         drawn.grammar.output.screen = Some(s);
         drawn.grammar.output.fit_screen()?;
@@ -110,8 +118,8 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place) -> Result<(), String> {
         let palette = Palette::named(&ui.theme);
         let show = |picture: &Option<Picture>, model: &drawland_grid::ui::Model| {
             let mut text = match picture {
-                Some(Picture::Text(t)) => t.clone(),
-                Some(Picture::Bitmap(b)) => b.braille(),
+                Some(Picture::Text(t)) => t.placed_in(cols as usize, rows as usize),
+                Some(Picture::Bitmap(b)) => b.braille().placed_in(cols as usize, rows as usize),
                 None => Text::new(cols as usize, rows as usize),
             };
             let chrome = Chrome::lay(model, text.width, text.height);
@@ -128,13 +136,15 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place) -> Result<(), String> {
             if far {
                 crate::globe::make(&mut grammar);
             }
-            match drawer.paint_recalling(&grammar, &Place::at(lat, lng), drawn.profile.dir(), &(), &mut recall) {
+            let place = Place::at(lat, lng);
+            let painted = if far {
+                drawer.paint_globe(&grammar, &place, drawn.profile.dir(), &(), crate::globe::radius(grammar.output.scale.0), ui.names_past_rim)
+            } else {
+                drawer.paint_recalling(&grammar, &place, drawn.profile.dir(), &(), &mut recall)
+            };
+            match painted {
                 Ok(p) => {
-                    let mut p = p.picture;
-                    if far {
-                        p.globe(crate::globe::radius(grammar.output.scale.0));
-                    }
-                    picture = Some(p);
+                    picture = Some(p.picture);
                     error = None;
                     ms = Some(t.elapsed().as_millis() as u64);
                 }
@@ -226,7 +236,7 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place) -> Result<(), String> {
         if across != 0.0 || down != 0.0 {
             let frame = Frame::new(&drawn.grammar.output, (lng, lat));
             let (w, h) = (drawn.grammar.output.width.0, drawn.grammar.output.height.0);
-            let (mx, my) = (w / cols as f64, h / rows as f64);
+            let (mx, my) = (w / map_cols.max(1) as f64, h / rows as f64);
             if let Some((x, y)) = frame.to_world(w / 2.0 + across * mx, h / 2.0 + down * my) {
                 (lng, lat) = (((x + 540.0) % 360.0) - 180.0, y.clamp(-85.0, 85.0));
             }

@@ -202,11 +202,88 @@ impl Painting {
 /// Draws maps, downloading and caching what they read.
 pub struct Drawer {
     http: http::Http,
+    tiles: TileMemo,
+}
+
+/// Vector tiles kept between runs: a moving screen reads the same few
+/// tiles frame after frame (a globe a few dozen shallow ones), and reading
+/// them from the disk cache and decoding them again was most of a frame.
+#[derive(Default)]
+struct TileMemo {
+    /// The tile source's URL template, read from its TileJSON, and when.
+    source: std::sync::Mutex<Option<(String, std::time::Instant)>>,
+    /// Each tile's features, by the filter they passed.
+    decoded: std::sync::Mutex<std::collections::HashMap<(terramask::TileId, String), std::sync::Arc<terramask::Features>>>,
+}
+
+impl TileMemo {
+    /// Tiles held at most: a city's deepest are a few MB each.
+    const MAX: usize = 400;
+    /// How long a TileJSON's template is trusted (its URLs change with every
+    /// build of the source).
+    const FRESH: std::time::Duration = std::time::Duration::from_secs(600);
+
+    fn fetcher(&self) -> Result<terramask::Fetcher, String> {
+        let mut source = self.source.lock().unwrap();
+        let template = match &*source {
+            Some((t, at)) if at.elapsed() < Self::FRESH => t.clone(),
+            _ => {
+                let t = terramask::Fetcher::with_source(tiles::TILES).resolve().map_err(|e| format!("vector tiles: {e}"))?.template;
+                *source = Some((t.clone(), std::time::Instant::now()));
+                t
+            }
+        };
+        Ok(terramask::Fetcher::with_source(template))
+    }
+
+    /// The features of `ids` that pass `filter`: those decoded before from
+    /// memory, the rest read (in parallel) and kept.
+    fn features(&self, ids: &[terramask::TileId], filter: &terramask::Filter, progress: impl Fn(usize, usize) + Sync) -> Result<terramask::Features, String> {
+        let key = format!("{filter:?}");
+        let missing: Vec<terramask::TileId> = {
+            let decoded = self.decoded.lock().unwrap();
+            ids.iter().filter(|id| !decoded.contains_key(&(**id, key.clone()))).copied().collect()
+        };
+        if !missing.is_empty() {
+            let fetcher = self.fetcher()?;
+            let done = std::sync::atomic::AtomicUsize::new(ids.len() - missing.len());
+            let next = std::sync::atomic::AtomicUsize::new(0);
+            let found: std::sync::Mutex<Vec<(terramask::TileId, Result<terramask::Features, String>)>> = std::sync::Mutex::new(Vec::new());
+            std::thread::scope(|scope| {
+                for _ in 0..missing.len().min(8) {
+                    scope.spawn(|| loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(&id) = missing.get(i) else { break };
+                        let one = fetcher.features_of(&[id], filter, |_, _| {}).map_err(|e| format!("vector tiles: {e}"));
+                        found.lock().unwrap().push((id, one));
+                        progress(done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1, ids.len());
+                    });
+                }
+            });
+            let mut decoded = self.decoded.lock().unwrap();
+            if decoded.len() + missing.len() > Self::MAX {
+                decoded.clear();
+            }
+            for (id, one) in found.into_inner().unwrap() {
+                decoded.insert((id, key.clone()), std::sync::Arc::new(one?));
+            }
+        }
+        let decoded = self.decoded.lock().unwrap();
+        let mut out = terramask::Features::new();
+        for id in ids {
+            if let Some(f) = decoded.get(&(*id, key.clone())) {
+                out.areas.extend(f.areas.iter().cloned());
+                out.lines.extend(f.lines.iter().cloned());
+                out.pins.extend(f.pins.iter().cloned());
+            }
+        }
+        Ok(out)
+    }
 }
 
 impl Drawer {
     pub fn new(settings: Settings) -> Drawer {
-        Drawer { http: http::Http::new(settings.cache, settings.offline, settings.refresh) }
+        Drawer { http: http::Http::new(settings.cache, settings.offline, settings.refresh), tiles: TileMemo::default() }
     }
 
     /// `address` looked up with Nominatim (cached): `(lat, lng)`.
@@ -347,6 +424,23 @@ impl Drawer {
         Ok(Painting { title: grammar.title.clone(), picture })
     }
 
+    /// A globe (`globe::make`'s graph) painted at `place`, its rim
+    /// `radius` units round the screen's centre, cut there; with
+    /// `names_past_rim`, the names run on past it, not cut.
+    pub fn paint_globe(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress, radius: f64, names_past_rim: bool) -> Result<Painting, String> {
+        let (output, screen, layers) = self.painted(grammar, place, dir, progress)?;
+        let origin = drawland_grid::origin(&output, &screen);
+        let mut picture = drawland_grid::render(&screen, origin, &layers);
+        // The names alone, placed where they are with the map: placing
+        // reads the names and nothing under them.
+        let names = names_past_rim.then(|| {
+            let names: Vec<_> = layers.iter().filter(|l| matches!(l.shape, drawland_core::grammar_run::PaintShape::Names(_))).cloned().collect();
+            drawland_grid::render(&screen, origin, &names)
+        });
+        picture.globe(radius, names.as_ref());
+        Ok(Painting { title: grammar.title.clone(), picture })
+    }
+
     /// A graph's layers at `place` as a [`drawland_grid::Scene`]: its
     /// screen painted wide once, any view of it painted after in a frame's
     /// time. Web Mercator, north up, unbent only.
@@ -440,7 +534,7 @@ impl Drawer {
             Some(features)
         };
         let tile_features = match tiles::plan(output, &grammar.tile_selectors(), osm.as_deref())? {
-            Some(t) => read_tiles(&download, t, &mut notes)?,
+            Some(t) => read_tiles(&self.tiles, &download, t, &mut notes)?,
             None => Vec::new(),
         };
         let terrain = read_terrain(&download, grammar, output)?;
@@ -578,7 +672,7 @@ fn read_terrain(download: &Task, grammar: &Grammar, output: &Output) -> Result<O
 
 /// OpenFreeMap's vector tiles under the output (cached by terramask), as the
 /// `vector tiles` row; then the features mended across tile edges.
-fn read_tiles(download: &Task, mut tiles: Tiles, notes: &mut Vec<String>) -> Result<Vec<Feature>, String> {
+fn read_tiles(memo: &TileMemo, download: &Task, mut tiles: Tiles, notes: &mut Vec<String>) -> Result<Vec<Feature>, String> {
     let ids = tiles.tiles(terramask::MAX_ZOOM);
     let n = ids.len() as u64;
     let task = download.child("tiles", "vector tiles", n, "tiles");
@@ -586,14 +680,12 @@ fn read_tiles(download: &Task, mut tiles: Tiles, notes: &mut Vec<String>) -> Res
     if warn {
         task.log(Level::Warn, &plan);
     }
-    let found = terramask::Fetcher::with_source(tiles::TILES)
-        .features_of(&ids, tiles.filter(), |done, total| {
-            if done == 1 {
-                task.set_total(total as u64);
-            }
-            task.step(done as u64, "");
-        })
-        .map_err(|e| format!("vector tiles: {e}"))?;
+    let found = memo.features(&ids, tiles.filter(), |done, total| {
+        if done == 1 {
+            task.set_total(total as u64);
+        }
+        task.step(done as u64, "");
+    })?;
     tiles.add_features(found);
     task.ok(&format!("zoom {} · {}", tiles.zoom(terramask::MAX_ZOOM), tiles.filter().layers().join(", ")));
 

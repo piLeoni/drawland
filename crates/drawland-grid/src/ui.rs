@@ -112,6 +112,9 @@ pub struct Chrome {
     cells: Vec<Option<(char, Role)>>,
     /// Later zones lie over earlier ones: a menu over the bar under it.
     pub zones: Vec<Zone>,
+    /// The cells across left of the column, where the map is (all of them
+    /// while it is shut).
+    pub free: usize,
 }
 
 /// The column's width in cells on a screen `width` across.
@@ -122,7 +125,7 @@ fn column_width(width: usize) -> usize {
 impl Chrome {
     /// `model` laid out on `width` × `height` cells.
     pub fn lay(model: &Model, width: usize, height: usize) -> Chrome {
-        let mut c = Chrome { width, height, cells: vec![None; width * height], zones: Vec::new() };
+        let mut c = Chrome { width, height, cells: vec![None; width * height], zones: Vec::new(), free: width };
         if width == 0 || height == 0 {
             return c;
         }
@@ -301,6 +304,7 @@ impl Chrome {
     fn column(&mut self, lines: &[Line]) {
         let cw = column_width(self.width);
         let x0 = self.width - cw;
+        self.free = x0;
         let (top, bottom) = (1, self.height - 1);
         self.fill(x0, top, cw, bottom - top, Role::Panel);
         for y in top..bottom {

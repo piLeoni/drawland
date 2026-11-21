@@ -104,41 +104,63 @@ impl Picture {
     /// A globe's picture (an `ortho` output) with everything past its rim
     /// cleared, the rim drawn: the globe is `radius` units round the
     /// screen's centre. Past the rim the profile's background (a page
-    /// filled as land) would stand for ground there is none of.
-    pub fn globe(&mut self, radius: f64) {
-        match self {
-            Picture::Bitmap(b) => {
-                let (cx, cy) = (b.width as f64 / 2.0, b.height as f64 / 2.0);
-                for y in 0..b.height {
-                    for x in 0..b.width {
+    /// filled as land) would stand for ground there is none of. With
+    /// `names` (the same screen's names painted alone), the names run on
+    /// past the rim instead of being cut by it, and the rim gives way to
+    /// them.
+    pub fn globe(&mut self, radius: f64, names: Option<&Picture>) {
+        match (self, names) {
+            (Picture::Bitmap(b), names) => {
+                let names = match names {
+                    Some(Picture::Bitmap(n)) if n.width == b.width && n.height == b.height => Some(n),
+                    _ => None,
+                };
+                // A name's ink, and a pixel round it (its halo): the rim
+                // stops short of it.
+                let ink = |x: usize, y: usize| names.is_some_and(|n| n.black(x, y) != n.invert);
+                let (w, h) = (b.width, b.height);
+                let near = |x: usize, y: usize| {
+                    (x.saturating_sub(1)..=(x + 1).min(w - 1)).any(|i| (y.saturating_sub(1)..=(y + 1).min(h - 1)).any(|j| ink(i, j)))
+                };
+                let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
+                for y in 0..h {
+                    for x in 0..w {
                         let d = (x as f64 + 0.5 - cx).hypot(y as f64 + 0.5 - cy);
                         if d > radius + 0.5 {
-                            b.put(x, y, false);
-                        } else if d > radius - 0.5 {
+                            b.put(x, y, ink(x, y));
+                        } else if d > radius - 0.5 && !near(x, y) {
                             b.put(x, y, true);
                         }
                     }
                 }
             }
-            Picture::Text(t) => {
+            (Picture::Text(t), names) => {
+                let names = match names {
+                    Some(Picture::Text(n)) if n.width == t.width && n.height == t.height => Some(n),
+                    _ => None,
+                };
                 // A cell is one unit across and two down.
                 let (cx, cy) = (t.width as f64 / 2.0, t.height as f64);
                 for y in 0..t.height {
                     for x in 0..t.width {
                         let d = (x as f64 + 0.5 - cx).hypot((y as f64 + 0.5) * 2.0 - cy);
                         if d > radius + 0.5 {
-                            t.clear(x, y);
+                            match names {
+                                Some(n) => t.put(x, y, n.cell(x, y).clone()),
+                                None => t.clear(x, y),
+                            }
                         }
                     }
                 }
-                // The rim in Braille dots, two to a unit.
+                // The rim in Braille dots, two to a unit, on empty cells.
                 let steps = (radius * 4.0 * std::f64::consts::PI).ceil().max(16.0) as usize;
                 let rim = drawland_core::paint::Rgb(0x5a, 0x64, 0x78);
                 for i in 0..steps {
                     let a = i as f64 / steps as f64 * std::f64::consts::TAU;
                     let (x, y) = ((cx + radius * a.cos()) * 2.0, (cy + radius * a.sin()) * 2.0);
                     let cell = ((x / 2.0) as usize, (y / 4.0) as usize);
-                    if cell.0 < t.width && cell.1 < t.height && t.cell(cell.0, cell.1).char() == ' ' {
+                    let named = names.is_some_and(|n| n.cell(cell.0.min(n.width - 1), cell.1.min(n.height - 1)).char() != ' ');
+                    if cell.0 < t.width && cell.1 < t.height && t.cell(cell.0, cell.1).char() == ' ' && !named {
                         t.dot(x as i64, y as i64, Some(rim));
                     }
                 }

@@ -137,21 +137,54 @@ impl Ortho {
     /// [`Ortho::dense`], each point with its lon/lat as the line has it
     /// (−180° and 180° apart).
     fn dense_lonlat(&self, l: &LineString<f64>) -> Vec<(V3, (f64, f64))> {
+        // 180° is −180°, to the bit: two tiles' areas meeting along the
+        // antimeridian then meet point for point once projected, and their
+        // union leaves no seam for a shore to draw.
+        let turn = |x: f64, y: f64| self.turn(if x >= 180.0 { x - 360.0 } else { x }, y);
+        // Tiles end a hair short of ±180° (179.9999°, or leaning a tenth of
+        // a degree off it): on the antimeridian they are taken to be, or a
+        // world's sea keeps a sliver of no sea down it, which a shore draws
+        // as a seam.
+        let snap = |c: Coord<f64>| {
+            if (c.x.abs() - 180.0).abs() < SEAM {
+                Coord { x: 180.0f64.copysign(c.x), y: c.y }
+            } else {
+                c
+            }
+        };
         let mut out = Vec::with_capacity(l.0.len());
-        for (i, c) in l.0.iter().enumerate() {
+        for (i, &c) in l.0.iter().enumerate() {
+            let c = snap(c);
             if i > 0 {
-                let a = l.0[i - 1];
+                let a = snap(l.0[i - 1]);
                 // The same point twice (−180° and 180°, or a pole) is no edge.
-                let (pa, pc) = (self.turn(a.x, a.y), self.turn(c.x, c.y));
+                let (pa, pc) = (turn(a.x, a.y), turn(c.x, c.y));
                 let same = (pa.0 - pc.0).abs() + (pa.1 - pc.1).abs() + (pa.2 - pc.2).abs() < 1e-12;
-                let n = if same { 1 } else { ((c.x - a.x).abs().max((c.y - a.y).abs()) / STEP).ceil() as usize };
-                for k in 1..n {
-                    let t = k as f64 / n as f64;
-                    let (x, y) = (a.x + (c.x - a.x) * t, a.y + (c.y - a.y) * t);
-                    out.push((self.turn(x, y), (x, y)));
+                if same {
+                } else if a.x == c.x || a.y == c.y {
+                    // Along a meridian or a parallel (a tile's edge): split
+                    // on whole degrees, so two areas sharing the edge share
+                    // its points too.
+                    let (from, to) = if a.x == c.x { (a.y, c.y) } else { (a.x, c.x) };
+                    let (lo, hi) = (from.min(to), from.max(to));
+                    let mut cuts: Vec<f64> = ((lo / STEP).floor() as i64 + 1..=(hi / STEP).ceil() as i64 - 1).map(|k| k as f64 * STEP).filter(|v| *v > lo && *v < hi).collect();
+                    if to < from {
+                        cuts.reverse();
+                    }
+                    for v in cuts {
+                        let (x, y) = if a.x == c.x { (a.x, v) } else { (v, a.y) };
+                        out.push((turn(x, y), (x, y)));
+                    }
+                } else {
+                    let n = ((c.x - a.x).abs().max((c.y - a.y).abs()) / STEP).ceil() as usize;
+                    for k in 1..n {
+                        let t = k as f64 / n as f64;
+                        let (x, y) = (a.x + (c.x - a.x) * t, a.y + (c.y - a.y) * t);
+                        out.push((turn(x, y), (x, y)));
+                    }
                 }
             }
-            out.push((self.turn(c.x, c.y), (c.x, c.y)));
+            out.push((turn(c.x, c.y), (c.x, c.y)));
         }
         out
     }
@@ -212,7 +245,8 @@ impl Ortho {
         }
         let seen = |p: &V3| p.2 >= EPS;
         if pts.iter().all(seen) {
-            return vec![pts];
+            let ring = unspiked(pts);
+            return if ring.len() >= 3 { vec![ring] } else { Vec::new() };
         }
         if !pts.iter().any(seen) {
             // Out of sight all round: the whole disc when the ring holds the
@@ -300,6 +334,7 @@ impl Ortho {
                 }
                 i = next;
             }
+            let ring = unspiked(ring);
             if ring.len() >= 3 {
                 out.push(ring);
             }
@@ -361,6 +396,43 @@ impl Ortho {
             .collect()
     }
 }
+
+/// A ring with its ways out and back along itself taken out: a world's sea
+/// goes down the antimeridian at 180° and up it at −180°, one line on the
+/// sphere, which a shore would draw as a seam across the sea.
+fn unspiked(pts: Vec<V3>) -> Vec<V3> {
+    let close = |a: &V3, b: &V3| (a.0 - b.0).abs() + (a.1 - b.1).abs() + (a.2 - b.2).abs() < 1e-9;
+    let mut out: Vec<V3> = Vec::with_capacity(pts.len());
+    for p in pts {
+        if out.last().is_some_and(|l| close(l, &p)) {
+            continue;
+        }
+        if out.len() >= 2 && close(&out[out.len() - 2], &p) {
+            out.pop();
+            continue;
+        }
+        out.push(p);
+    }
+    // Round the ring's start: out and back over its first point.
+    loop {
+        let n = out.len();
+        if n >= 2 && close(&out[0], &out[n - 1]) {
+            out.pop();
+        } else if n >= 3 && close(&out[1], &out[n - 1]) {
+            out.remove(0);
+            out.pop();
+        } else {
+            break;
+        }
+    }
+    out
+}
+
+/// How near ±180° a longitude is taken to be on it, degrees (≈ 11 km at
+/// the equator): a globe's tiles are shallow, their edges along the
+/// antimeridian drawn to about that (down to Antarctica one leans 0.09°
+/// off it), and a globe's pixel spans more.
+const SEAM: f64 = 0.1;
 
 /// How far out from the centre a cut ring's points may lie, on the disc: a
 /// chord of the rim a degree long comes this far in at its middle. A shore
@@ -568,6 +640,41 @@ mod tests {
             let a: f64 = m.0.iter().map(|p| Polygon::new(LineString::from(p.exterior().0.iter().map(|c| o.forward(c.x, c.y)).collect::<Vec<_>>()), vec![]).unsigned_area()).sum();
             assert!(a < 1.0, "lat {lat}: {a}");
         }
+    }
+
+    #[test]
+    fn a_world_sea_has_no_seam_down_the_antimeridian() {
+        // Seen from the Pacific, the world's sea goes down 180° and up −180°
+        // in sight: one line, out and back, taken out.
+        let o = Ortho::new(-170.0, 10.0);
+        // As tiles have it: a hair short of ±180°.
+        let e = 179.999_899_790_331_74;
+        let world = Polygon::new(LineString::from(vec![(-e, -85.0), (e, -85.0), (e, 85.0), (-e, 85.0), (-e, -85.0)]), vec![]);
+        let Geometry::MultiPolygon(m) = o.visible(&Geometry::Polygon(world)) else { panic!() };
+        let near_seam = m.0.iter().flat_map(|p| p.exterior().0.iter()).filter(|c| (c.x.abs() - 180.0).abs() < 1e-3 && c.y.abs() < 60.0).count();
+        assert_eq!(near_seam, 0, "no points down the antimeridian");
+        let disc = std::f64::consts::PI * RADIUS * RADIUS;
+        let a: f64 = m.0.iter().map(|p| Polygon::new(LineString::from(p.exterior().0.iter().map(|c| o.forward(c.x, c.y)).collect::<Vec<_>>()), vec![]).unsigned_area()).sum();
+        assert!((a / disc - 1.0).abs() < 0.02, "still the disc: {}", a / disc);
+    }
+
+    #[test]
+    fn two_tiles_meeting_at_the_antimeridian_join_without_a_seam() {
+        // A sea in two tiles, east and west of 180°: once cut and projected
+        // they share their edge point for point, and their union is one.
+        use geo::{BooleanOps, MapCoords};
+        let o = Ortho::new(-178.3, 4.0);
+        let square = |x0: f64, x1: f64| Polygon::new(LineString::from(vec![(x0, -10.5), (x1, -10.5), (x1, 10.5), (x0, 10.5), (x0, -10.5)]), vec![]);
+        let flat = |p: Polygon<f64>| {
+            let Geometry::MultiPolygon(m) = o.visible(&Geometry::Polygon(p)) else { panic!() };
+            m.map_coords(|c| {
+                let (x, y) = o.forward(c.x, c.y);
+                Coord { x, y }
+            })
+        };
+        let joined = flat(square(169.5, 180.0)).union(&flat(square(-180.0, -170.5)));
+        assert_eq!(joined.0.len(), 1);
+        assert!(joined.0[0].interiors().is_empty());
     }
 
     #[test]

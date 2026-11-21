@@ -51,6 +51,8 @@ const ui = {
   // A bitmap pixel is `size` device pixels; a text cell is `size` CSS px of font.
   size: saved("size", bitmap ? Math.max(1, Math.round(devicePixelRatio)) : 14),
   fit: saved("fit", "window"),
+  // On a globe, names cut at the rim ("cut") or running on past it ("over").
+  rim: saved("rim", "cut"),
 }
 const FONT = getComputedStyle(document.getElementById("probe")).fontFamily
 // On a bitmap the theme is the paper: ink is white on black.
@@ -65,7 +67,11 @@ function cell() {
   probe.style.fontSize = ui.size + "px"
   probe.textContent = "M".repeat(100)
   const r = probe.getBoundingClientRect()
-  return (cellSize = { size: ui.size, w: r.width / 100, h: r.height })
+  // A row is two characters' width tall, as the map takes it (a character
+  // one unit across, two down) and as a terminal's cell about is: a row as
+  // tall as the font (some 1.7 widths) drew every map a fifth too wide.
+  const w = r.width / 100
+  return (cellSize = { size: ui.size, w, h: 2 * w })
 }
 
 // Units across and down, CSS px a unit (a character is one unit across, two
@@ -87,6 +93,17 @@ function grid() {
   return { w, h, ux, uy, cw, ch, cssW, cssH, x: Math.round((W - cssW) / 2), y: Math.round((H - cssH) / 2), W, H }
 }
 
+// The map's part of the screen: left of the column while it is open (the
+// server says how far that is), so a globe is round in what is seen of it.
+function mapGrid() {
+  const g = grid()
+  if (!chrome || !ui.column) return g
+  const laidFor = bitmap ? chrome.w : chrome.cols
+  if (laidFor !== g.w || !chrome.free || chrome.free >= g.w) return g
+  const w = chrome.free
+  return { ...g, w, cssW: w * g.cw }
+}
+
 // ---- Web Mercator: the page is the Mercator plane scaled at its centre --
 
 const mercator = (lat, lng) => [R * lng * Math.PI / 180, R * Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360))]
@@ -95,7 +112,20 @@ const perUnit = s => s.scale / 1000 / Math.cos(s.lat * Math.PI / 180) // Mercato
 
 // Move the map by CSS px (the ground follows the pointer).
 function pan(dxCss, dyCss) {
-  const g = grid(), per = perUnit(state)
+  const g = mapGrid()
+  if (isGlobe(state, g)) {
+    // A globe turns under the pointer, its size held: the ground at the
+    // centre moves as far as the pointer, north–south along a meridian and
+    // east–west along the parallel (so faster round the parallels near a
+    // pole), up to a degree short of a pole.
+    const m = state.scale / 1000 // metres a unit
+    state.lat = Math.max(-89, Math.min(89, state.lat + dyCss / g.uy * m / R * 180 / Math.PI))
+    const lng = state.lng - dxCss / g.ux * m / (R * Math.cos(state.lat * Math.PI / 180)) * 180 / Math.PI
+    state.lng = ((lng + 540) % 360) - 180
+    changed()
+    return
+  }
+  const per = perUnit(state)
   const [x, y] = mercator(state.lat, state.lng)
   const [lat, lng] = geographic(x - dxCss / g.ux * per, y + dyCss / g.uy * per)
   state.lat = Math.max(-85, Math.min(85, lat))
@@ -107,6 +137,11 @@ function pan(dxCss, dyCss) {
   changed()
 }
 
+// Whether the screen is a globe: past FAR_KM across its shorter side, as
+// `globe::far` has it.
+const FAR_KM = 4000
+const isGlobe = (s, g) => s.scale / 1e6 * Math.min(g.w, bitmap ? g.h : 2 * g.h) > FAR_KM
+
 // From ten centimetres a unit to the whole globe on the screen with room
 // round it (a 0.85 share of its shorter side), as `globe::clamp` holds it.
 function clampScale(scale, g) {
@@ -116,11 +151,13 @@ function clampScale(scale, g) {
 
 // Zoom by `factor` (2 is twice as near), the point under (cx, cy) CSS px held still.
 function zoomAt(factor, cx, cy) {
-  const g = grid()
+  const g = mapGrid()
   const ox = (cx - g.x - g.cssW / 2) / g.ux, oy = (cy - g.y - g.cssH / 2) / g.uy
   const [x, y] = mercator(state.lat, state.lng), per = perUnit(state)
   const px = x + ox * per, py = y - oy * per
   state.scale = clampScale(state.scale / factor, g)
+  // A globe grows and shrinks round its centre.
+  if (isGlobe(state, g)) { changed(); return }
   // The latitude moves with the centre, and with it the Mercator metres a unit.
   for (let i = 0; i < 2; i++) {
     const per2 = perUnit(state)
@@ -145,7 +182,7 @@ function zoomBy(doublings, cx, cy) {
 }
 // To level `n`, the point under (cx, cy) CSS px held still.
 function zoomLevel(n, cx, cy) {
-  const to = clampScale(Math.pow(2, -n / LEVELS), grid())
+  const to = clampScale(Math.pow(2, -n / LEVELS), mapGrid())
   if (Math.abs(to / state.scale - 1) > 1e-9) zoomAt(state.scale / to, cx, cy)
 }
 
@@ -160,11 +197,11 @@ async function pump() {
   if (inFlight || !dirty) return
   dirty = false
   inFlight = true
-  const g = grid(), at = { ...state }
+  const g = mapGrid(), at = { ...state }
   const [mx, my] = mercator(at.lat, at.lng)
   const t0 = performance.now()
   try {
-    const r = await fetch(`/frame?style=${encodeURIComponent(ui.style)}&who=${WHO}&lng=${at.lng}&lat=${at.lat}&scale=${at.scale}&w=${g.w}&h=${g.h}`)
+    const r = await fetch(`/frame?style=${encodeURIComponent(ui.style)}&who=${WHO}&rim=${ui.rim}&lng=${at.lng}&lat=${at.lat}&scale=${at.scale}&w=${g.w}&h=${g.h}`)
     if (!r.ok) throw new Error(await r.text())
     building = r.headers.get("X-Scene") === "building"
     const frame = bitmap ? fromPbm(new Uint8Array(await r.arrayBuffer())) : fromRuns(await r.json(), g)
@@ -242,7 +279,7 @@ function cells(cx, text, fg, bg, x, y, cw, ch) {
 let raf = 0
 function draw() {
   raf = 0
-  const dpr = devicePixelRatio, g = grid()
+  const dpr = devicePixelRatio, g = mapGrid()
   const W = Math.round(g.W * dpr), H = Math.round(g.H * dpr)
   for (const c of [mapCanvas, chromeCanvas]) if (c.width !== W || c.height !== H) { c.width = W; c.height = H }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -295,15 +332,18 @@ async function pumpChrome() {
   chromeInFlight = true
   const g = grid()
   const q = new URLSearchParams({
-    style: ui.style, open: ui.open || "", column: ui.column ? 1 : 0, theme: ui.theme, size: ui.size, fit: ui.fit,
+    style: ui.style, open: ui.open || "", column: ui.column ? 1 : 0, theme: ui.theme, size: ui.size, fit: ui.fit, rim: ui.rim,
     lat: state.lat, lng: state.lng, scale: state.scale, w: g.w, h: g.h,
     ms: lastMs ?? "", loading: building ? 1 : 0, error,
   })
   try {
     const r = await fetch(`/chrome?${q}`)
     if (r.ok) {
+      const free = chrome?.free
       chrome = await r.json()
       chrome.g = g
+      // The column opened or shut: the map takes the room it leaves.
+      if (chrome.free !== free) changed()
       if (bitmap) chrome.planes = { cover: unbase64(chrome.cover), ink: unbase64(chrome.ink), stride: Math.ceil(chrome.w / 8) }
       chromeDrawn = null
       drawChrome()
@@ -389,6 +429,7 @@ function act(action) {
     case "style": if (arg !== ui.style) { ui.style = arg; save("style", arg); dirty = true } break
     case "size": ui.size = +arg; save("size", ui.size); cellSize = null; dirty = true; break
     case "fit": ui.fit = arg; save("fit", arg); dirty = true; break
+    case "rim": ui.rim = arg; save("rim", arg); dirty = true; break
     case "zoom": glide(+arg); break
     case "link": window.open(arg, "_blank", "noopener"); break
     case "edit": edit(); break
@@ -461,6 +502,7 @@ addEventListener("keydown", e => {
   if (e.key === "+" || e.key === "=") glide(1)
   else if (e.key === "-" || e.key === "_") glide(-1)
   else if (e.key === "Escape" && ui.open) { ui.open = null; chromeDirty = true; pumpChrome() }
+  else if (e.key === "n") act(`rim:${ui.rim === "over" ? "cut" : "over"}`)
   else if (KEYS[e.key]) act(KEYS[e.key])
 })
 addEventListener("keyup", e => held.delete(e.key))

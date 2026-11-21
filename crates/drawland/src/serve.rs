@@ -58,7 +58,7 @@ struct Inner {
     screen: Screen,
     scene: Option<Arc<Scene>>,
     /// Far out, the last globe painted and the view it shows.
-    globe: Option<(View, Arc<Picture>)>,
+    globe: Option<(Ask, Arc<Picture>)>,
     /// Where the names were on each page's last frame (by its `who`), so
     /// they hold still as its map zooms.
     recall: HashMap<String, Recall>,
@@ -70,6 +70,13 @@ struct Inner {
 }
 
 type Styles = Arc<Vec<Style>>;
+
+/// A view asked for, and (on a globe) whether its names run past the rim.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Ask {
+    view: View,
+    names_past_rim: bool,
+}
 
 pub fn run(drawer: &Drawer, path: &Path, place: &Place, port: u16) -> Result<(), String> {
     let profile = Profile::read(path)?;
@@ -114,7 +121,7 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place, port: u16) -> Result<(),
     let names: Vec<&str> = styles.iter().map(|s| s.name.as_str()).collect();
     eprintln!("{title}: http://localhost:{port}/  ({kind_name}: {}; Ctrl-C stops)", names.join(", "));
 
-    let (want, wanted) = mpsc::channel::<(usize, View)>();
+    let (want, wanted) = mpsc::channel::<(usize, Ask)>();
     {
         let styles = styles.clone();
         std::thread::spawn(move || {
@@ -125,19 +132,20 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place, port: u16) -> Result<(),
         });
     }
     // Scenes are built here, the newest view asked for first.
-    let mut pending: Vec<Option<View>> = vec![None; styles.len()];
-    while let Ok((i, view)) = wanted.recv() {
-        pending[i] = Some(view);
+    let mut pending: Vec<Option<Ask>> = vec![None; styles.len()];
+    while let Ok((i, ask)) = wanted.recv() {
+        pending[i] = Some(ask);
         while let Ok((i, newer)) = wanted.try_recv() {
             pending[i] = Some(newer);
         }
         for i in 0..styles.len() {
-            let Some(view) = pending[i].take() else { continue };
+            let Some(ask) = pending[i].take() else { continue };
+            let view = ask.view;
             let style = &styles[i];
             let far = crate::globe::far_view(&view);
             let (grammar, profile, generation) = {
                 let mut inner = style.inner.lock().unwrap();
-                let done = if far { inner.globe.as_ref().is_some_and(|(v, _)| *v == view) } else { inner.scene.as_ref().is_some_and(|s| s.covers(&view)) };
+                let done = if far { inner.globe.as_ref().is_some_and(|(a, _)| *a == ask) } else { inner.scene.as_ref().is_some_and(|s| s.covers(&view)) };
                 if done {
                     inner.building = false;
                     continue;
@@ -147,13 +155,13 @@ pub fn run(drawer: &Drawer, path: &Path, place: &Place, port: u16) -> Result<(),
             };
             let t = Instant::now();
             if far {
-                let painted = globe(drawer, &profile, &grammar, &view);
+                let painted = globe(drawer, &profile, &grammar, &ask);
                 let mut inner = style.inner.lock().unwrap();
                 if inner.generation == generation {
                     match painted {
                         Ok(p) => {
                             eprintln!("  {}: globe in {} ms", style.name, t.elapsed().as_millis());
-                            inner.globe = Some((view, Arc::new(p)));
+                            inner.globe = Some((ask, Arc::new(p)));
                             inner.error = None;
                         }
                         Err(e) => {
@@ -212,7 +220,8 @@ fn build(drawer: &Drawer, profile: &Profile, grammar: &Grammar, view: &View) -> 
 /// The view far out: the graph painted on a globe round its centre, the
 /// view's own size, past the rim cleared. Each is a run of the graph, on
 /// tiles a few levels deep.
-fn globe(drawer: &Drawer, profile: &Profile, grammar: &Grammar, view: &View) -> Result<Picture, String> {
+fn globe(drawer: &Drawer, profile: &Profile, grammar: &Grammar, ask: &Ask) -> Result<Picture, String> {
+    let view = &ask.view;
     let (lng, lat) = drawland_grid::scene::geographic(view.center);
     let mut grammar = grammar.clone();
     crate::globe::make(&mut grammar);
@@ -221,9 +230,7 @@ fn globe(drawer: &Drawer, profile: &Profile, grammar: &Grammar, view: &View) -> 
     grammar.output.scale.0 = scale;
     grammar.output.tile_zoom = Some(view.tile_zoom());
     grammar.output.fit_screen()?;
-    let mut picture = drawer.paint_graph(&grammar, &Place::at(lat, lng), profile.dir(), &())?.picture;
-    picture.globe(crate::globe::radius(scale));
-    Ok(picture)
+    Ok(drawer.paint_globe(&grammar, &Place::at(lat, lng), profile.dir(), &(), crate::globe::radius(scale), ask.names_past_rim)?.picture)
 }
 
 /// A request: its method, target (`/frame?…`) and body.
@@ -234,7 +241,7 @@ struct Request {
 }
 
 /// One connection's requests, kept alive.
-fn serve(stream: TcpStream, styles: &Styles, want: &mpsc::Sender<(usize, View)>, page: &str) {
+fn serve(stream: TcpStream, styles: &Styles, want: &mpsc::Sender<(usize, Ask)>, page: &str) {
     let Ok(mut out) = stream.try_clone() else { return };
     let mut reader = BufReader::new(stream);
     while let Some(req) = request(&mut reader) {
@@ -303,7 +310,7 @@ fn decode(s: &str) -> String {
 
 /// The view the query asks for, painted from the scene there is; a new
 /// scene asked for when this one will not hold it much longer.
-fn frame(styles: &Styles, want: &mpsc::Sender<(usize, View)>, q: &Query) -> Result<Reply, String> {
+fn frame(styles: &Styles, want: &mpsc::Sender<(usize, Ask)>, q: &Query) -> Result<Reply, String> {
     let (i, style) = q.style(styles)?;
     let mut inner = style.inner.lock().unwrap();
     let mut s = inner.screen;
@@ -311,10 +318,11 @@ fn frame(styles: &Styles, want: &mpsc::Sender<(usize, View)>, q: &Query) -> Resu
     s.height = (q.number("h")? as u32).clamp(1, 4096);
     let view = View::at(q.number("lng")?, q.number("lat")?, crate::globe::clamp(q.number("scale")?, s.size()), s);
     if crate::globe::far_view(&view) {
-        return globe_frame(style, i, want, view, inner);
+        let ask = Ask { view, names_past_rim: q.get("rim").as_deref() == Some("over") };
+        return globe_frame(style, i, want, ask, inner);
     }
     if !inner.scene.as_ref().is_some_and(|sc| sc.covers(&view)) && !inner.building {
-        let _ = want.send((i, view));
+        let _ = want.send((i, Ask { view, names_past_rim: false }));
         inner.building = true;
     }
     // The first scene is waited for; after that, the old one is painted.
@@ -353,10 +361,10 @@ fn frame(styles: &Styles, want: &mpsc::Sender<(usize, View)>, q: &Query) -> Resu
 
 /// A frame far out: the globe painted for this view, or until it comes the
 /// last one (`X-Scene: building`, and the page asks again).
-fn globe_frame(style: &Style, i: usize, want: &mpsc::Sender<(usize, View)>, view: View, mut inner: std::sync::MutexGuard<Inner>) -> Result<Reply, String> {
-    let have = inner.globe.as_ref().is_some_and(|(v, _)| *v == view);
+fn globe_frame(style: &Style, i: usize, want: &mpsc::Sender<(usize, Ask)>, ask: Ask, mut inner: std::sync::MutexGuard<Inner>) -> Result<Reply, String> {
+    let have = inner.globe.as_ref().is_some_and(|(a, _)| *a == ask);
     if !have && !inner.building {
-        let _ = want.send((i, view));
+        let _ = want.send((i, ask));
         inner.building = true;
     }
     // A globe takes a tenth of a second or so: the one for this view is
@@ -368,7 +376,7 @@ fn globe_frame(style: &Style, i: usize, want: &mpsc::Sender<(usize, View)>, view
         if let Some(e) = inner.error.take() {
             return Err(e);
         }
-        let exact = inner.globe.as_ref().is_some_and(|(v, _)| *v == view);
+        let exact = inner.globe.as_ref().is_some_and(|(a, _)| *a == ask);
         let now = Instant::now();
         if exact || (inner.globe.is_some() && now >= soon) {
             break;
@@ -378,13 +386,13 @@ fn globe_frame(style: &Style, i: usize, want: &mpsc::Sender<(usize, View)>, view
         }
         let until = if inner.globe.is_some() { soon } else { deadline };
         inner = style.ready.wait_timeout(inner, until.saturating_duration_since(now)).unwrap().0;
-        if !inner.building && !inner.globe.as_ref().is_some_and(|(v, _)| *v == view) {
-            let _ = want.send((i, view));
+        if !inner.building && !inner.globe.as_ref().is_some_and(|(a, _)| *a == ask) {
+            let _ = want.send((i, ask));
             inner.building = true;
         }
     }
     let (shown, picture) = inner.globe.clone().unwrap();
-    let ready = shown == view;
+    let ready = shown == ask;
     drop(inner);
     let (body, kind) = match &*picture {
         Picture::Bitmap(b) => (b.pbm(), "image/x-portable-bitmap"),
@@ -410,6 +418,7 @@ fn chrome(styles: &Styles, q: &Query) -> Result<Reply, String> {
     }
     ui.size = q.get("size").and_then(|s| s.parse().ok());
     ui.fit_screen = q.get("fit").as_deref() == Some("screen");
+    ui.names_past_rim = q.get("rim").as_deref() == Some("over");
     let (w, h) = ((q.number("w")? as usize).clamp(1, 4096), (q.number("h")? as usize).clamp(1, 4096));
     let error = q.get("error").filter(|e| !e.is_empty());
     let now = Now {
@@ -446,7 +455,7 @@ fn chrome(styles: &Styles, q: &Query) -> Result<Reply, String> {
                         .collect()
                 })
                 .collect();
-            serde_json::json!({ "cols": w, "rows": h, "cell": [1, 1], "runs": rows, "zones": zones(&laid) })
+            serde_json::json!({ "cols": w, "rows": h, "cell": [1, 1], "free": laid.free, "runs": rows, "zones": zones(&laid) })
         }
         ScreenKind::Bitmap => {
             let font = bitmap_font(h);
@@ -469,6 +478,8 @@ fn chrome(styles: &Styles, q: &Query) -> Result<Reply, String> {
             }
             serde_json::json!({
                 "cols": cols, "rows": rows, "cell": [font.width, font.height], "w": w, "h": h,
+                // Pixels across left of the column.
+                "free": if laid.free < cols { laid.free * font.width } else { w },
                 "cover": base64(&cover), "ink": base64(&ink), "zones": zones(&laid),
             })
         }

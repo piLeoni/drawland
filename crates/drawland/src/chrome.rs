@@ -25,6 +25,8 @@ pub struct Ui {
     pub size: Option<u32>,
     /// A page shows the profile's own screen size, not the window's.
     pub fit_screen: bool,
+    /// On a globe, names run on past the rim instead of being cut by it.
+    pub names_past_rim: bool,
 }
 
 impl Ui {
@@ -36,6 +38,7 @@ impl Ui {
             style: style.into(),
             size: None,
             fit_screen: false,
+            names_past_rim: false,
         }
     }
 
@@ -52,6 +55,7 @@ impl Ui {
             "style" => self.style = arg.into(),
             "size" => self.size = arg.parse().ok(),
             "fit" => self.fit_screen = arg == "screen",
+            "rim" => self.names_past_rim = arg == "over",
             "none" => {
                 self.open = menu_was_open;
                 return true;
@@ -68,6 +72,7 @@ impl Ui {
             't' => "open:theme".into(),
             'f' => "open:size".into(),
             'p' | '\\' => "column".into(),
+            'n' => format!("rim:{}", if self.names_past_rim { "cut" } else { "over" }),
             _ => return None,
         })
     }
@@ -230,6 +235,12 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
         }
         lines.push(Line::Row(vec![Button::new("edit", "edit"), Button::new("reload", "reload")]));
         lines.push(Line::Blank);
+        lines.push(Line::Head("names on the globe".into()));
+        lines.push(Line::Row(vec![
+            Button::new("cut at rim", "rim:cut").on(!ui.names_past_rim),
+            Button::new("past rim", "rim:over").on(ui.names_past_rim),
+        ]));
+        lines.push(Line::Blank);
         if host == Host::Page {
             let size = ui.size.unwrap_or(if bitmap { 1 } else { 14 });
             lines.push(Line::Head(if bitmap { "pixel" } else { "font" }.into()));
@@ -243,7 +254,7 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
             lines.push(Line::Blank);
         }
         lines.push(Line::Head("keys".into()));
-        for k in ["arrows hjkl  move", "+ −         zoom", "s t         style, theme", "p           this panel", "e           edit the style"] {
+        for k in ["arrows hjkl  move", "+ −         zoom", "s t         style, theme", "p           this panel", "n           names past the rim", "e           edit the style"] {
             lines.push(Line::Dim(k.into()));
         }
         if host == Host::Terminal {

@@ -109,6 +109,25 @@ impl Text {
         Some(&mut self.cells[y as usize * self.width + x as usize])
     }
 
+    /// These cells at the left of a blank screen `width` × `height`
+    /// (cut where it is smaller).
+    pub fn placed_in(&self, width: usize, height: usize) -> Text {
+        let mut out = Text::new(width, height);
+        for y in 0..self.height.min(height) {
+            for x in 0..self.width.min(width) {
+                out.cells[y * width + x] = self.cells[y * self.width + x].clone();
+            }
+        }
+        out
+    }
+
+    /// The cell at `(x, y)` set.
+    pub fn put(&mut self, x: usize, y: usize, cell: Cell) {
+        if x < self.width && y < self.height {
+            self.cells[y * self.width + x] = cell;
+        }
+    }
+
     /// The cell at `(x, y)` emptied: no character, no colour.
     pub fn clear(&mut self, x: usize, y: usize) {
         if x < self.width && y < self.height {
