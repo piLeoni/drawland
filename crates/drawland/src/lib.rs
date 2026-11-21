@@ -338,7 +338,7 @@ impl Drawer {
         let (output, screen, layers) = self.painted(grammar, place, dir, progress)?;
         let origin = drawland_grid::origin(&output, &screen);
         let picture = match drawland_grid::View::of(&output, screen) {
-            Some(view) => recall.render(&view, origin, &layers),
+            Some(view) => recall.render(&view, &layers),
             None => {
                 *recall = drawland_grid::Recall::default();
                 drawland_grid::render(&screen, origin, &layers)

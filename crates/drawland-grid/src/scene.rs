@@ -75,31 +75,65 @@ impl View {
     }
 }
 
-/// Where the names were on the ground, web Mercator metres, by layer and
-/// text: kept from frame to frame by whoever paints them
-/// ([`Scene::render_recalling`]).
+/// What a moving screen keeps from frame to frame, so that only what moved
+/// moves: kept by whoever paints them ([`Scene::render_recalling`]).
+///
+/// - Where the names were on the ground, web Mercator metres, by layer and
+///   text: each is put there again first.
+/// - Where patterns are read from: on the ground while the map pans, on the
+///   screen while it zooms. A pattern cannot grow with the map (a `~` is a
+///   `~`), and read from the world's own origin a zoom step turns all of it
+///   over; held to the screen, the sea stays still and the coast moves.
 #[derive(Clone, Debug, Default)]
-pub struct Recall(HashMap<(usize, String), Vec<(f64, f64)>>);
+pub struct Recall {
+    names: HashMap<(usize, String), Vec<(f64, f64)>>,
+    anchor: Option<Anchor>,
+}
+
+/// The ground point (web Mercator metres) patterns are read from, at the
+/// scale it was set for, and the origin it gave.
+#[derive(Clone, Copy, Debug)]
+struct Anchor {
+    at: (f64, f64),
+    per_unit: f64,
+    origin: (i64, i64),
+}
 
 impl Recall {
+    /// The screen's top-left dot in the pattern's dots, `world` the one the
+    /// world's own origin gives: at the last frame's scale, from the same
+    /// ground point; at another, where the last frame's was on the screen.
+    pub fn origin(&mut self, view: &View, world: (i64, i64)) -> (i64, i64) {
+        let per_dot = view.per_unit * view.screen.dot();
+        let at = match self.anchor {
+            Some(a) if (a.per_unit / view.per_unit - 1.0).abs() < 1e-9 => a.at,
+            Some(a) => ((world.0 - a.origin.0) as f64 * per_dot, (a.origin.1 - world.1) as f64 * per_dot),
+            None => (0.0, 0.0),
+        };
+        let origin = (world.0 - (at.0 / per_dot).round() as i64, world.1 + (at.1 / per_dot).round() as i64);
+        self.anchor = Some(Anchor { at, per_unit: view.per_unit, origin });
+        origin
+    }
+
     /// Where the names were, in grid units of a picture (`grid` from web
     /// Mercator metres to its grid units).
     pub fn hints(&self, grid: impl Fn((f64, f64)) -> (f64, f64)) -> Hints {
-        self.0.iter().map(|(key, at)| (key.clone(), at.iter().map(|&m| grid(m)).collect())).collect()
+        self.names.iter().map(|(key, at)| (key.clone(), at.iter().map(|&m| grid(m)).collect())).collect()
     }
 
     /// Where the names are now (`ground` from grid units to web Mercator
     /// metres), forgetting where they were.
     pub fn keep(&mut self, placed: &Placed, ground: impl Fn((f64, f64)) -> (f64, f64)) {
-        self.0.clear();
+        self.names.clear();
         for run in &placed.runs {
-            self.0.entry((run.layer, run.text.iter().collect())).or_default().push(ground(run.at));
+            self.names.entry((run.layer, run.text.iter().collect())).or_default().push(ground(run.at));
         }
     }
 
     /// A picture of `view` painted from its own layers ([`crate::render`]),
     /// each name first tried where it was.
-    pub fn render(&mut self, view: &View, origin: (i64, i64), layers: &[Painted]) -> Picture {
+    pub fn render(&mut self, view: &View, layers: &[Painted]) -> Picture {
+        let origin = self.origin(view, view.origin());
         let (w, h) = view.screen.size();
         let (cw, ch) = view.screen.cell();
         let (x0, y0) = (view.center.0 - w / 2.0 * view.per_unit, view.center.1 + h / 2.0 * view.per_unit);
@@ -225,6 +259,7 @@ impl Scene {
             let (ux, uy) = ((mx - sx) / self.view.per_unit, (sy - my) / self.view.per_unit);
             ((ux * k + t.x) / cw, (uy * k + t.y) / ch)
         };
+        let origin = recall.origin(view, origin);
         let (picture, placed) = crate::render_hinted(&view.screen, origin, &layers, &recall.hints(grid));
         recall.keep(&placed, ground);
         (picture, (exact.x - t.x, exact.y - t.y))
@@ -286,6 +321,25 @@ mod tests {
         assert_eq!(at.tile_zoom(), 15);
         assert!(View { per_unit: at.per_unit * 64.0, ..at }.tile_zoom() == 9);
         assert!(scene.covers(&same) && !scene.covers(&near) && !scene.covers(&View { center: (at.center.0 + 40.0 * at.per_unit, at.center.1), ..same }));
+    }
+
+    #[test]
+    fn patterns_hold_the_ground_as_it_pans_and_the_screen_as_it_zooms() {
+        let screen = Screen { kind: ScreenKind::Text, width: 60, height: 20, invert: false };
+        let at = View::at(12.0, 45.0, 3000.0, screen);
+        let mut recall = Recall::default();
+        let first = recall.origin(&at, at.origin());
+        assert_eq!(first, at.origin(), "first, the world's own");
+        // Three dots east: read three dots on.
+        let east = View { center: (at.center.0 + 3.0 * at.per_unit * screen.dot(), at.center.1), ..at };
+        assert_eq!(recall.origin(&east, east.origin()), (first.0 + 3, first.1));
+        // Nearer: where it was on the screen, though the world's turns over.
+        let near = View { per_unit: east.per_unit / 1.09, ..east };
+        assert_ne!(near.origin(), (first.0 + 3, first.1));
+        assert_eq!(recall.origin(&near, near.origin()), (first.0 + 3, first.1));
+        // And from there on the ground again, at the new scale.
+        let on = View { center: (near.center.0, near.center.1 - 2.0 * near.per_unit * screen.dot()), ..near };
+        assert_eq!(recall.origin(&on, on.origin()), (first.0 + 3, first.1 + 2));
     }
 
     #[test]
