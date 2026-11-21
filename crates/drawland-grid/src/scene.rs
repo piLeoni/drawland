@@ -88,6 +88,9 @@ impl View {
 pub struct Recall {
     names: HashMap<(usize, String), Vec<(f64, f64)>>,
     anchor: Option<Anchor>,
+    /// The scale of the last frame, and where the world's origin was on
+    /// its screen (units).
+    phase: Option<(f64, (f64, f64))>,
 }
 
 /// The ground point (web Mercator metres) patterns are read from, at the
@@ -100,6 +103,19 @@ struct Anchor {
 }
 
 impl Recall {
+    /// Where the world's origin (at `ground` on this screen, units) is to
+    /// sit, give or take whole cells: where it was, at the last frame's
+    /// scale; at another scale, where it is.
+    fn phase(&mut self, view: &View, ground: (f64, f64)) -> (f64, f64) {
+        match self.phase {
+            Some((per_unit, phase)) if (per_unit / view.per_unit - 1.0).abs() < 1e-9 => phase,
+            _ => {
+                self.phase = Some((view.per_unit, ground));
+                ground
+            }
+        }
+    }
+
     /// The screen's top-left dot in the pattern's dots, `world` the one the
     /// world's own origin gives: at the last frame's scale, from the same
     /// ground point; at another, where the last frame's was on the screen.
@@ -208,15 +224,26 @@ impl Scene {
             y: vh / 2.0 - sh / 2.0 * k - (self.view.center.1 - view.center.1) / view.per_unit,
         };
         let (cw, ch) = view.screen.cell();
-        let t = Coord { x: (exact.x / cw).round() * cw, y: (exact.y / ch).round() * ch };
+        // Where the ground's lattice sits on the screen: the world's own
+        // origin, in units. Panning, the map moves by whole cells from where
+        // it was (the cells' phase on the ground held); at a new scale it is
+        // drawn exactly where it is, so a zoom is centred on its point and
+        // not half a cell off it, a different way each step.
+        let ground = (vw / 2.0 - view.center.0 / view.per_unit, vh / 2.0 + view.center.1 / view.per_unit);
+        let phase = recall.phase(view, ground);
+        let off = |v: f64, phase: f64, c: f64| {
+            let d = v - phase;
+            d - (d / c).round() * c
+        };
+        let t = Coord { x: exact.x - off(ground.0, phase.0, cw), y: exact.y - off(ground.1, phase.1, ch) };
         // Patterns read where the moved map puts them: the origin follows
         // the same whole steps as the geometry.
         let dot = view.screen.dot();
         let per_dot = view.per_unit * dot;
         let (wd, hd) = view.screen.dots();
         let origin = (
-            ((exact.x / dot + view.center.0 / per_dot).round() - t.x / dot) as i64 - wd as i64 / 2,
-            ((exact.y / dot - view.center.1 / per_dot).round() - t.y / dot) as i64 - hd as i64 / 2,
+            (exact.x / dot + view.center.0 / per_dot - t.x / dot).round() as i64 - wd as i64 / 2,
+            (exact.y / dot - view.center.1 / per_dot - t.y / dot).round() as i64 - hd as i64 / 2,
         );
         let to = |c: Coord<f64>| Coord { x: c.x * k + t.x, y: c.y * k + t.y };
         // The view in the scene's units, a margin round it for halos and
@@ -313,11 +340,17 @@ mod tests {
         // Twice as near: twice as big, still centred.
         let near = View { per_unit: at.per_unit / 2.0, ..same };
         assert_eq!(black(&near).len(), 64);
-        // Half a pixel east: the map moved one whole pixel, the picture
-        // said to be half a pixel off.
+        // Moving on from a frame, half a pixel east: the map moved by a
+        // whole pixel (or none), the picture said to be half a pixel off.
+        let mut recall = Recall::default();
+        let (_, off) = scene.render_recalling(&same, &mut recall);
+        assert!(off.0.abs() < 1e-9 && off.1.abs() < 1e-9, "a first frame is exact");
         let half = View { center: (at.center.0 + 0.5 * at.per_unit, at.center.1), ..same };
-        let (_, off) = scene.render(&half);
+        let (_, off) = scene.render_recalling(&half, &mut recall);
         assert!((off.0.abs() - 0.5).abs() < 1e-9 && off.1.abs() < 1e-9);
+        // At a new scale, exact again.
+        let (_, off) = scene.render_recalling(&View { per_unit: half.per_unit / 1.09, ..half }, &mut recall);
+        assert!(off.0.abs() < 1e-9 && off.1.abs() < 1e-9);
         assert_eq!(at.tile_zoom(), 15);
         assert!(View { per_unit: at.per_unit * 64.0, ..at }.tile_zoom() == 9);
         assert!(scene.covers(&same) && !scene.covers(&near) && !scene.covers(&View { center: (at.center.0 + 40.0 * at.per_unit, at.center.1), ..same }));

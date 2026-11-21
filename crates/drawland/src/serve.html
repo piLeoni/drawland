@@ -126,6 +126,25 @@ function zoomAt(factor, cx, cy) {
   changed()
 }
 
+// Zoom goes by levels, a quarter of a doubling each: a screen redraws every
+// name and line at a new scale, so it is asked for at few, a whole level
+// apart, not at every tick of a trackpad.
+const LEVELS = 4
+const levelOf = scale => Math.round(-Math.log2(scale) * LEVELS)
+let turned = 0 // the wheel's turn (doublings) not yet a level
+function zoomBy(doublings, cx, cy) {
+  turned += doublings
+  const n = Math.trunc(turned * LEVELS)
+  if (!n) return
+  turned -= n / LEVELS
+  zoomLevel(levelOf(state.scale) + n, cx, cy)
+}
+// To level `n`, the point under (cx, cy) CSS px held still.
+function zoomLevel(n, cx, cy) {
+  const to = clampScale(Math.pow(2, -n / LEVELS), grid())
+  if (Math.abs(to / state.scale - 1) > 1e-9) zoomAt(state.scale / to, cx, cy)
+}
+
 // ---- Frames: asked one at a time, always for where the map is now -------
 
 // The last frame: its own canvas and the view it shows.
@@ -419,21 +438,13 @@ main.addEventListener("wheel", e => {
   const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1
   const k = e.ctrlKey ? 0.01 : 0.002
   const r = main.getBoundingClientRect()
-  zoomAt(Math.exp(-e.deltaY * unit * k), e.clientX - r.left, e.clientY - r.top)
+  zoomBy(-e.deltaY * unit * k / Math.LN2, e.clientX - r.left, e.clientY - r.top)
 }, { passive: false })
 
-// Buttons and keys zoom twice as near or far, in a short glide.
+// Buttons and keys zoom twice as near or far, a level at a time.
 function glide(steps) {
-  const r = main.getBoundingClientRect(), total = Math.pow(2, steps), t0 = performance.now(), T = 220
-  let done = 1
-  const step = now => {
-    const t = Math.min(1, (now - t0) / T), eased = 1 - Math.pow(1 - t, 3)
-    const want = Math.pow(total, eased)
-    zoomAt(want / done, r.width / 2, r.height / 2)
-    done = want
-    if (t < 1) requestAnimationFrame(step)
-  }
-  requestAnimationFrame(step)
+  const r = main.getBoundingClientRect(), from = levelOf(state.scale), n = Math.round(steps * LEVELS)
+  for (let i = 1; i <= Math.abs(n); i++) setTimeout(() => zoomLevel(from + Math.sign(n) * i, r.width / 2, r.height / 2), (i - 1) * 60)
 }
 
 const MOVES = { ArrowLeft: [1, 0], h: [1, 0], ArrowRight: [-1, 0], l: [-1, 0], ArrowUp: [0, 1], k: [0, 1], ArrowDown: [0, -1], j: [0, -1] }
