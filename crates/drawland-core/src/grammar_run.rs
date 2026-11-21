@@ -496,7 +496,12 @@ fn arctic_cap(tiles: &[Feature], projector: &crate::projection::Projector) -> Op
     // A little past the tiles' edge, so the cap overlaps the sea it joins.
     const EDGE: f64 = 85.0;
     // In lon/lat, then as every feature is: a globe cuts it at its horizon.
-    let ring: Vec<Coord<f64>> = (0..=720).map(|i| Coord { x: -180.0 + i as f64 * 0.5, y: EDGE }).collect();
+    // The band from the edge to the pole, east along the edge and back west
+    // along the pole: an area in lon/lat too, so whoever reads its turn
+    // (a globe's cut) reads it right. The edge alone, out and back, has none,
+    // and a globe seen from near the equator took it for all but the cap.
+    let mut ring: Vec<Coord<f64>> = (0..=720).map(|i| Coord { x: -180.0 + i as f64 * 0.5, y: EDGE }).collect();
+    ring.extend([Coord { x: 180.0, y: 90.0 }, Coord { x: -180.0, y: 90.0 }, Coord { x: -180.0, y: EDGE }]);
     let cap = geo::Geometry::Polygon(Polygon::new(LineString::new(ring), vec![]));
     let seen = projector.visible(&cap);
     let projected = projector.project_geometry(seen.as_ref().unwrap_or(&cap));

@@ -131,6 +131,12 @@ impl Ortho {
 
     /// A line's points on the sphere, its long edges split.
     fn dense(&self, l: &LineString<f64>) -> Vec<V3> {
+        self.dense_lonlat(l).into_iter().map(|(p, _)| p).collect()
+    }
+
+    /// [`Ortho::dense`], each point with its lon/lat as the line has it
+    /// (−180° and 180° apart).
+    fn dense_lonlat(&self, l: &LineString<f64>) -> Vec<(V3, (f64, f64))> {
         let mut out = Vec::with_capacity(l.0.len());
         for (i, c) in l.0.iter().enumerate() {
             if i > 0 {
@@ -141,10 +147,11 @@ impl Ortho {
                 let n = if same { 1 } else { ((c.x - a.x).abs().max((c.y - a.y).abs()) / STEP).ceil() as usize };
                 for k in 1..n {
                     let t = k as f64 / n as f64;
-                    out.push(self.turn(a.x + (c.x - a.x) * t, a.y + (c.y - a.y) * t));
+                    let (x, y) = (a.x + (c.x - a.x) * t, a.y + (c.y - a.y) * t);
+                    out.push((self.turn(x, y), (x, y)));
                 }
             }
-            out.push(self.turn(c.x, c.y));
+            out.push((self.turn(c.x, c.y), (c.x, c.y)));
         }
         out
     }
@@ -194,9 +201,10 @@ impl Ortho {
     /// point (an area as wide as the world, down one side of the
     /// antimeridian and up the other) is closed by the whole rim.
     fn rings(&self, l: &LineString<f64>, ccw: bool) -> Vec<Vec<V3>> {
-        let mut pts = self.dense(l);
+        let (mut pts, mut lonlat): (Vec<V3>, Vec<(f64, f64)>) = self.dense_lonlat(l).into_iter().unzip();
         if pts.len() > 1 && pts.first() == pts.last() {
             pts.pop();
+            lonlat.pop();
         }
         let n = pts.len();
         if n < 3 {
@@ -211,33 +219,61 @@ impl Ortho {
             // view's centre, else nothing.
             return if self.holds_centre(l) { vec![rim(ccw)] } else { Vec::new() };
         }
-        // The runs in sight: (where it comes back, the points, where it leaves).
+        // The runs in sight: (where it comes back, the points, where it
+        // leaves), and the indices of the hidden points either side.
         let start = (0..n).find(|&i| !seen(&pts[i])).unwrap();
         let mut runs: Vec<(V3, Vec<V3>, V3)> = Vec::new();
-        let mut current: Option<(V3, Vec<V3>)> = None;
+        let mut hidden: Vec<(usize, usize)> = Vec::new(); // (last hidden before, first hidden after)
+        let mut current: Option<(V3, Vec<V3>, usize)> = None;
         for k in 1..=n {
-            let (q, p) = (pts[(start + k - 1) % n], pts[(start + k) % n]);
+            let (qi, pi) = ((start + k - 1) % n, (start + k) % n);
+            let (q, p) = (pts[qi], pts[pi]);
             match (seen(&q), seen(&p)) {
-                (false, true) => current = Some((cross(q, p), vec![inward(p)])),
+                (false, true) => current = Some((cross(q, p), vec![inward(p)], qi)),
                 (true, true) => {
-                    if let Some((_, run)) = current.as_mut() {
+                    if let Some((_, run, _)) = current.as_mut() {
                         run.push(inward(p));
                     }
                 }
                 (true, false) => {
-                    if let Some((entry, run)) = current.take() {
+                    if let Some((entry, run, before)) = current.take() {
                         runs.push((entry, run, cross(q, p)));
+                        hidden.push((before, pi));
                     }
                 }
                 (false, false) => {}
             }
         }
+        // Whether the ring, out of sight from where run `a` leaves to where
+        // run `b` comes back, goes round an area (as a world's sea goes down
+        // the antimeridian at 180° and up it at −180°), not back along its
+        // own way (a tile's edge, a spike): only then is a way back at the
+        // very point it left the whole rim round.
+        let encloses = |a: usize, b: usize| {
+            let (from, to) = (hidden[a].1, hidden[b].0);
+            let len = (to + n - from) % n + 1;
+            // In lon/lat as the ring has it: a world's sea goes down at 180°
+            // and up at −180°, one line on the sphere but a band apart here.
+            let ll: Vec<(f64, f64)> = (0..len).map(|k| lonlat[(from + k) % n]).collect();
+            let twice: f64 = (0..ll.len()).map(|i| {
+                let (p, q) = (ll[i], ll[(i + 1) % ll.len()]);
+                p.0 * q.1 - q.0 * p.1
+            }).sum();
+            twice.abs() / 2.0 > 1.0 // square degrees
+        };
         let angle = |p: &V3| p.1.atan2(p.0);
-        // How far round the rim, the ring's way, from `a` to `b`: (0, 2π].
-        let along = |a: &V3, b: &V3| {
+        // How far round the rim, the ring's way, from where run `i` leaves
+        // to where run `j` comes back: [0, 2π]; at the same point, all the
+        // way round if the ring went round an area out of sight, else none.
+        let along = |i: usize, j: usize| {
+            let (a, b) = (&runs[i].2, &runs[j].0);
             let d = if ccw { angle(b) - angle(a) } else { angle(a) - angle(b) };
             let d = d.rem_euclid(std::f64::consts::TAU);
-            if d < 1e-9 { std::f64::consts::TAU } else { d }
+            if d < 1e-9 || std::f64::consts::TAU - d < 1e-9 {
+                if encloses(i, j) { std::f64::consts::TAU } else { 0.0 }
+            } else {
+                d
+            }
         };
         let mut used = vec![false; runs.len()];
         let mut out = Vec::new();
@@ -254,8 +290,8 @@ impl Ortho {
                 ring.extend(run.iter().copied());
                 ring.push(*exit);
                 // The run whose way back is met first round the rim.
-                let next = (0..runs.len()).min_by(|&a, &b| along(exit, &runs[a].0).total_cmp(&along(exit, &runs[b].0))).unwrap();
-                ring.extend(horizon(*exit, along(exit, &runs[next].0) * if ccw { 1.0 } else { -1.0 }));
+                let next = (0..runs.len()).min_by(|&a, &b| along(i, a).total_cmp(&along(i, b))).unwrap();
+                ring.extend(horizon(*exit, along(i, next) * if ccw { 1.0 } else { -1.0 }));
                 if next == first {
                     break;
                 }
@@ -498,6 +534,43 @@ mod tests {
     }
 
     #[test]
+    fn a_world_sea_keeps_its_land_from_the_equator() {
+        // The world's sea, a hole for a land in the middle of the view: seen
+        // from the equator (both poles on the rim) and from 10° north alike.
+        let world = LineString::from(vec![(-180.0, -85.05), (180.0, -85.05), (180.0, 85.05), (-180.0, 85.05), (-180.0, -85.05)]);
+        let land = LineString::from(vec![(0.0, -30.0), (0.0, 30.0), (40.0, 30.0), (40.0, -30.0), (0.0, -30.0)]);
+        let sea = Polygon::new(world, vec![land]);
+        for lat in [10.0, 5.0, 0.0, -5.0, -10.0] {
+            let o = Ortho::new(20.0, lat);
+            let Geometry::MultiPolygon(m) = o.visible(&Geometry::Polygon(sea.clone())) else { panic!() };
+            let flat = |l: &LineString<f64>| Polygon::new(LineString::from(l.0.iter().map(|c| o.forward(c.x, c.y)).collect::<Vec<_>>()), vec![]).unsigned_area();
+            let holes: usize = m.0.iter().map(|p| p.interiors().len()).sum();
+            let disc = std::f64::consts::PI * RADIUS * RADIUS;
+            let outs: Vec<f64> = m.0.iter().map(|p| flat(p.exterior()) / disc).collect();
+            eprintln!("lat {lat}: outsides {outs:?}, holes {holes}");
+            // The land is a hole in the piece that holds the view's centre.
+            let centre = m.0.iter().find(|p| geo::Contains::contains(&Polygon::new(LineString::from(p.exterior().0.iter().map(|c| o.forward(c.x, c.y)).collect::<Vec<_>>()), vec![]), &geo::Point::new(1.0, 1.0)));
+            assert!(centre.is_some_and(|p| p.interiors().len() == 1), "lat {lat}");
+        }
+    }
+
+    #[test]
+    fn a_ring_back_along_its_own_way_is_no_area() {
+        // A tile's edge along 85° north, out and back: no area. Seen from
+        // near the equator it leaves sight and comes back at one point, as
+        // a world's sea does; it is not closed by the whole rim, which made
+        // the sea cover every land.
+        let mut pts: Vec<(f64, f64)> = (0..=360).map(|i| (-180.0 + i as f64, 85.0)).collect();
+        pts.extend((0..=360).rev().map(|i| (-180.0 + i as f64, 85.0)));
+        for lat in [0.0, 3.0, 5.0, 10.0] {
+            let o = Ortho::new(20.0, lat);
+            let Geometry::MultiPolygon(m) = o.visible(&Geometry::Polygon(Polygon::new(LineString::from(pts.clone()), vec![]))) else { panic!() };
+            let a: f64 = m.0.iter().map(|p| Polygon::new(LineString::from(p.exterior().0.iter().map(|c| o.forward(c.x, c.y)).collect::<Vec<_>>()), vec![]).unsigned_area()).sum();
+            assert!(a < 1.0, "lat {lat}: {a}");
+        }
+    }
+
+    #[test]
     fn a_hidden_ring_round_the_centre_is_the_disc() {
         // All of it beyond the horizon, but round the view's centre: a sea
         // whose shore is a far ring holds the whole near side.
@@ -538,3 +611,4 @@ mod tests {
         assert!(Polygon::new(LineString::from(projected), vec![]).unsigned_area() > 1e13);
     }
 }
+
