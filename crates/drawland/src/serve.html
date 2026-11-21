@@ -100,6 +100,10 @@ function pan(dxCss, dyCss) {
   const [lat, lng] = geographic(x - dxCss / g.ux * per, y + dyCss / g.uy * per)
   state.lat = Math.max(-85, Math.min(85, lat))
   state.lng = ((lng + 540) % 360) - 180
+  // The Mercator metres a unit held, as a web map holds its zoom: the scale
+  // true at the centre follows the latitude. Else every move north or south
+  // is a new scale, drawn afresh, and the map shakes as it is dragged.
+  state.scale = per * 1000 * Math.cos(state.lat * Math.PI / 180)
   changed()
 }
 
@@ -436,7 +440,8 @@ main.addEventListener("dragstart", e => e.preventDefault())
 main.addEventListener("wheel", e => {
   e.preventDefault()
   const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1
-  const k = e.ctrlKey ? 0.01 : 0.002
+  // A level (a quarter doubling) in about 30 px of wheel, 15 of a pinch.
+  const k = e.ctrlKey ? 0.012 : 0.006
   const r = main.getBoundingClientRect()
   zoomBy(-e.deltaY * unit * k / Math.LN2, e.clientX - r.left, e.clientY - r.top)
 }, { passive: false })
