@@ -327,6 +327,11 @@ paint({
 })
 ```
 
+The same expressions give paper styles ranges by zoom or scale, so one
+style reads right at any scale: `world.at(["step", ["zoom"], 1, 15, 3])` is
+1 below zoom 15 and 3 from it, and the array written straight into a call's
+options (a road class, a fill's spacing) is worked out the same way.
+
 On a screen every length counts pixels or characters, not millimetres: a
 buffer of 2 is two pixels, `page.width` is the screen's width, and the scale
 is the ground one of them spans, `scale: "3m"`. A character is one unit

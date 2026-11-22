@@ -1012,6 +1012,21 @@ declare const world: {
    * characters on a screen.
    */
   readonly scale: number
+  /**
+   * Mapbox's zoom at the middle of the page: the web Mercator world 512 units
+   * across at zoom 0, a unit being a millimetre on paper, a pixel or a
+   * character on a screen.
+   */
+  readonly zoom: number
+  /**
+   * A Mapbox expression's value here: a range by zoom or scale, so one style
+   * reads right at any scale. `world.at(["step", ["zoom"], 1, 15, 3])` is 1
+   * below zoom 15 and 3 from it; `world.at(["interpolate", ["linear"],
+   * ["zoom"], 13, 0.5, 17, 2])` runs between. The same array written straight
+   * into a call's options is worked out the same way (a screen's `paint`
+   * keeps its own, worked out at every frame).
+   */
+  at<T = any>(expression: Expression): T
   /** Degrees clockwise. */
   readonly bearing: number
   /** `"webmercator"`, `"utm"`, or the PROJ string, as the output gives it. */

@@ -71,6 +71,7 @@ pub const FUNCTIONS: &[&str] = &[
     "page.toWorld",
     "title",
     "view",
+    "world.at",
     "world.toPage",
 ];
 
@@ -85,7 +86,25 @@ pub const PROPERTIES: &[&str] = &[
     "world.center",
     "world.projection",
     "world.scale",
+    "world.zoom",
 ];
+
+/// Whether `a` holds a range by zoom or scale: a Mapbox expression that
+/// reads `["zoom"]` or `["scale"]`, anywhere in it.
+fn reads_frame(a: &Arg) -> bool {
+    match a {
+        Arg::List(items) => {
+            let json = a.to_json();
+            if drawland_core::expr::Expr::is_expression(&json) {
+                drawland_core::expr::Expr::parse(&json).map(|e| e.reads().frame).unwrap_or(false)
+            } else {
+                items.iter().any(reads_frame)
+            }
+        }
+        Arg::Map(o) => o.0.iter().any(|(_, v)| reads_frame(v)),
+        _ => false,
+    }
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
@@ -206,6 +225,18 @@ impl Graph {
             n -= 1;
         }
         let args = &args[..n];
+        // A range by zoom or scale (a Mapbox expression reading `["zoom"]` or
+        // `["scale"]`) in a call's options is the value at this frame: the
+        // graph is made for one frame (a sheet, a scene), so the value is
+        // known now. A screen's `paint` keeps its expressions, worked out at
+        // every frame of a moving screen.
+        let at_frame;
+        let args = if !matches!(name, "paint" | "output" | "title") && args.iter().any(reads_frame) {
+            at_frame = self.at_frame(name, args)?;
+            &at_frame[..]
+        } else {
+            args
+        };
         match name {
             "features.osm" => {
                 let tags = self.object(at(args, 0), "features.osm")?.clone();
@@ -340,6 +371,17 @@ impl Graph {
                     Some((lng, lat)) => Ok(Arg::Map(crate::obj! { "lat" => lat, "lng" => lng })),
                     None => self.fail(format!("page.toWorld: [{}, {}] is off the edge of the projection's world", show_number(x), show_number(y))),
                 }
+            }
+            // A Mapbox expression's value at this frame (a range by zoom or
+            // scale, worked out above, or any other expression of no feature).
+            "world.at" => {
+                let Some(e) = args.first() else { return self.fail("world.at takes an expression, [\"step\", [\"zoom\"], …] say") };
+                let json = e.to_json();
+                if !drawland_core::expr::Expr::is_expression(&json) {
+                    return Ok(e.clone());
+                }
+                let r = self.at_frame("world.at", args)?;
+                Ok(r.into_iter().next().unwrap_or(Arg::Null))
             }
             "world.toPage" => {
                 let (lat, lng) = self.ground_point(at(args, 0), "world.toPage")?;
@@ -593,6 +635,33 @@ impl Graph {
         }
     }
 
+    /// `args` with each range by zoom or scale worked out at this frame.
+    fn at_frame(&mut self, name: &str, args: &[Arg]) -> Result<Vec<Arg>> {
+        let f = self.frame(name)?;
+        let frame = drawland_core::expr::Frame::new(f.output.scale / 1000.0, f.output.center.1);
+        fn walk(a: &Arg, frame: drawland_core::expr::Frame, name: &str) -> std::result::Result<Arg, String> {
+            Ok(match a {
+                Arg::List(items) => {
+                    let json = a.to_json();
+                    if drawland_core::expr::Expr::is_expression(&json) {
+                        let e = drawland_core::expr::Expr::parse(&json).map_err(|m| format!("{name}: {m}"))?;
+                        if e.reads().feature {
+                            return Err(format!(
+                                "{name}: an expression here reads the zoom or the scale, not a feature's tags (those are a screen's paint, or a module's classes and rules)"
+                            ));
+                        }
+                        Arg::from_json(&e.eval(&drawland_core::expr::Context { frame, tags: None }))
+                    } else {
+                        Arg::List(items.iter().map(|i| walk(i, frame, name)).collect::<std::result::Result<_, _>>()?)
+                    }
+                }
+                Arg::Map(o) => Arg::Map(crate::arg::Obj(o.0.iter().map(|(k, v)| Ok((k.clone(), walk(v, frame, name)?))).collect::<std::result::Result<_, String>>()?)),
+                other => other.clone(),
+            })
+        }
+        args.iter().map(|a| walk(a, frame, name)).collect::<std::result::Result<_, _>>().or_else(|m| self.fail(m))
+    }
+
     /// The value of `page.width`, `world.center` and the like.
     pub fn get_property(&mut self, name: &str) -> Result<Arg> {
         match name {
@@ -604,6 +673,10 @@ impl Graph {
             }
             "page.frame" => self.area(json!({ "engine_frame": {} })),
             "world.scale" => Ok(Arg::Num(self.current_output("world.scale")?.scale.0)),
+            "world.zoom" => {
+                let f = self.frame("world.zoom")?;
+                Ok(Arg::Num(drawland_core::expr::Frame::new(f.output.scale / 1000.0, f.output.center.1).zoom))
+            }
             "world.bearing" => Ok(Arg::Num(self.current_output("world.bearing")?.bearing)),
             "world.projection" => {
                 let p = self.current_output("world.projection")?.projection;

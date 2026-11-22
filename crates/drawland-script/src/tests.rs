@@ -499,7 +499,8 @@ fn declared() -> Vec<String> {
         } else if line.starts_with('}') {
             object = None;
         } else if let (Some(o), Some(method)) = (&object, line.strip_prefix("  ")) {
-            if let Some(name) = method.split('(').next().filter(|n| method.contains('(') && n.chars().all(|c| c.is_alphanumeric())) {
+            // A generic method (`at<T = any>(…)`) is named before its `<`.
+            if let Some(name) = method.split(['(', '<']).next().filter(|n| method.contains('(') && n.chars().all(|c| c.is_alphanumeric())) {
                 out.push(format!("{o}.{name}"));
             }
         }
@@ -1070,6 +1071,33 @@ fn a_look_can_be_a_mapbox_expression() {
     let e = err("output({ lat: 0, lng: 0, screen: { kind: 'bitmap', width: 80, height: 24 } })\n\
          paint({ id: 'x', from: areas.polygons(features.tiles('water')), fill: { pattern: ['match', ['get', 'class'], 'lake', 'dots', 'waves'] } })\n");
     assert!(e.message.contains("only names keep"), "{}", e.message);
+}
+
+#[test]
+fn a_range_by_zoom_is_worked_out_for_the_map() {
+    // One style, two scales: the residential class a single line far out,
+    // its true width near. 1:10000 at 45° is zoom 12.4; 1:2000 is 14.8.
+    let at = |scale: &str| {
+        evaluate(&format!(
+            "output({{ lat: 45, lng: 12, width: '6in', height: '4in', scale: '{scale}' }})\n\
+             title(String(world.at(['step', ['zoom'], 'far', 14, 'near'])) + ' ' + world.zoom.toFixed(1))\n\
+             const roads = modules.roads({{ from: features.tiles('roads'), classes: {{ \
+               residential: ['step', ['zoom'], ['literal', {{ singleLine: true }}], 14, ['literal', {{ ground: 2.5 }}]] }} }})\n\
+             draw({{ id: 'r', from: roads.outlines }})\n"
+        ))
+        .unwrap()
+        .to_json()
+    };
+    let (far, near) = (at("1:10000"), at("1:2000"));
+    assert_eq!(far["title"], "far 12.4");
+    assert_eq!(near["title"], "near 14.8");
+    let class = |g: &serde_json::Value| g.to_string();
+    assert!(class(&far).contains("\"single_line\":true"), "{far}");
+    assert!(class(&near).contains("\"ground\":2.5") && !class(&near).contains("single_line"), "{near}");
+    // A tag is a feature's: not in a call's options.
+    let e = err("output({ lat: 45, lng: 12, width: '6in', height: '4in', scale: '1:10000' })\n\
+         const w = fills.fill({ in: areas.polygons(features.tiles('water')), pattern: 'waves', spacing: ['step', ['zoom'], ['get', 'class'], 10, 2] })\n");
+    assert!(e.message.contains("not a feature's tags"), "{}", e.message);
 }
 
 #[test]

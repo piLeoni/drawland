@@ -445,6 +445,14 @@ impl WorldApi<'_> {
     pub fn scale(self) -> Result<f64> {
         self.0.get_property("world.scale").map(|v| v.as_num().unwrap_or(0.0))
     }
+    /// Mapbox's zoom at the middle of the page.
+    pub fn zoom(self) -> Result<f64> {
+        self.0.get_property("world.zoom").map(|v| v.as_num().unwrap_or(0.0))
+    }
+    /// A Mapbox expression's value at this frame: `["step", ["zoom"], 1, 15, 3]`.
+    pub fn at(self, expression: serde_json::Value) -> Result<Arg> {
+        self.0.call("world.at", &[Arg::from_json(&expression)])
+    }
     pub fn bearing(self) -> Result<f64> {
         self.0.get_property("world.bearing").map(|v| v.as_num().unwrap_or(0.0))
     }
