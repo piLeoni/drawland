@@ -394,7 +394,7 @@ impl Chrome {
         let (top, bottom) = (1, self.height - 1);
         self.fill(x0, top, cw, bottom - top, Role::Ground);
         for y in top..bottom {
-            self.put(x0, y, '│', Role::Ground);
+            self.put(x0, y, '│', Role::Rule);
         }
         self.zone(x0, top, cw, bottom - top, "none");
         // The header, fixed: what it is, and × to close it.
@@ -447,9 +447,9 @@ impl Chrome {
     /// need, `x0` the column's left.
     fn sheet(lines: &[Line], width: usize, x0: usize) -> Chrome {
         let mut s = Chrome { width, height: 2000, cells: vec![None; width * 2000], zones: Vec::new(), free: width, scroll: 0, cards: Vec::new() };
-        // A card a cell in from the column's sides, its text a cell further.
+        // A card a cell in from the column's sides, its text two cells further.
         let (card_x, card_w) = (x0 + 2, width.saturating_sub(x0 + 4));
-        let (left, end) = (card_x + 2, card_x + card_w - 1);
+        let (left, end) = (card_x + 2, card_x + card_w - 2);
         let key = lines.iter().filter_map(|l| if let Line::Key(k, _) = l { Some(k.chars().count()) } else { None }).max().unwrap_or(0);
         let mut y = 0;
         let mut card: Option<usize> = None;
@@ -463,12 +463,14 @@ impl Chrome {
                 *y += 1;
             }
         };
+        let row = |s: &mut Chrome, y: usize| s.fill(card_x, y, card_w, 1, Role::Panel);
         for line in lines {
             if let Line::Head(_) = line {
                 close(&mut s, &mut card, &mut y);
                 card = Some(y);
+                row(&mut s, y);
+                y += 1;
             }
-            let row = |s: &mut Chrome, y: usize| s.fill(card_x, y, card_w, 1, Role::Panel);
             match line {
                 Line::Head(t) => {
                     row(&mut s, y);
@@ -666,8 +668,9 @@ impl<'a> Pixels<'a> {
         }
         Some(match role {
             Role::On | Role::Brand => !ink,
-            // The column's ground: one pixel in eight, staggered row to row.
-            Role::Ground => ink || (py % 2 == 0 && (px + py / 2 * 2) % 4 == 0),
+            // The column's ground: one pixel in eight, staggered row to row,
+            // only where no line is drawn.
+            Role::Ground => ink || (ch == ' ' && py % 2 == 0 && (px + py / 2 * 2) % 4 == 0),
             // A control is framed, the frame broken where a letter's tail
             // reaches it and its corners rounded; the chosen one inverse.
             Role::Button | Role::Seam if cy > 0 => ink || self.frame(cx, cy, x, y),
@@ -844,15 +847,15 @@ mod tests {
         m.column = Some(vec![Line::Head("screen".into()), Line::Row(vec![Button::new("10", "size:10"), Button::new("12", "size:12").on(true)])]);
         let c = Chrome::lay(&m, 90, 30);
         let x0 = 90 - column_width(90);
-        assert_eq!(c.cell(x0, 5), Some(('│', Role::Ground)));
+        assert_eq!(c.cell(x0, 5), Some(('│', Role::Rule)));
         assert_eq!(c.cards.len(), 1, "the section a card");
         assert!(row(&c, 1).contains("settings") && row(&c, 1).contains(" × "), "{}", row(&c, 1));
         assert_eq!(c.hit(89 - 2, 1), Some("column"), "× closes it");
-        assert!(row(&c, 3).contains("SCREEN ──"), "{}", row(&c, 3));
-        assert!(row(&c, 4).contains(" 10 │ 12 "), "one segmented control: {}", row(&c, 4));
-        assert_eq!(c.cell(col(&c, 4, "│ 12"), 4), Some(('│', Role::Seam)));
+        assert!(row(&c, 4).contains("SCREEN ──"), "{}", row(&c, 4));
+        assert!(row(&c, 5).contains(" 10 │ 12 "), "one segmented control: {}", row(&c, 5));
+        assert_eq!(c.cell(col(&c, 5, "│ 12"), 5), Some(('│', Role::Seam)));
         assert!(c.zones.iter().all(|z| z.action != "column" || z.y == 1), "no floating tools");
-        assert_eq!(c.hit(x0 + 5, 4), Some("size:10"));
+        assert_eq!(c.hit(x0 + 5, 5), Some("size:10"));
     }
 
     #[test]

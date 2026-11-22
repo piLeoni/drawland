@@ -367,7 +367,8 @@ mod tests {
     #[test]
     fn past_the_scene_is_the_sea_sounding() {
         // A scene of solid sea; seen four times farther out, the view past
-        // its edge is the same sea, not paper, and rings run over it.
+        // its edge is the same sea, not paper, banded inverted (a band as
+        // wide as the gap), and the bands run.
         let wide = Screen { kind: ScreenKind::Bitmap, width: 40, height: 40, invert: false };
         let at = View::at(12.0, 45.0, 3000.0, wide);
         let solid = Look::Fill(FillPaint { pattern: Some("solid".into()), ..FillPaint::default() });
@@ -379,8 +380,8 @@ mod tests {
             _ => unreachable!(),
         };
         let (now, later) = (black(0.0), black(0.3));
-        assert!(now.len() > 1200, "nearly all sea: {}", now.len());
-        assert!(now.len() < 1600 && now != later, "rings, and they run");
+        assert!(now.len() > 400 && now.len() < 1300, "sea in bands, some of it inverted: {}", now.len());
+        assert!(now != later, "the bands run");
     }
 
     #[test]

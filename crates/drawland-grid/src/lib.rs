@@ -21,11 +21,14 @@ pub mod pattern;
 pub mod place;
 pub mod raster;
 pub mod scene;
+pub mod sky;
+mod stars;
 pub mod text;
 pub mod ui;
 
 pub use bitmap::Bitmap;
 pub use scene::{Recall, Scene, View};
+pub use sky::Sky;
 pub use text::Text;
 
 use drawland_core::grammar_run::{PaintShape, Painted};
@@ -102,41 +105,54 @@ impl Picture {
         }
     }
 
-    /// A globe's picture (an `ortho` output) with space past its rim: on a
-    /// night map (an inverted bitmap, text on a dark ground) black with a
-    /// few stars, the rim white on a bitmap; on a day map paper, the rim
-    /// black (a grey Braille ring on text either way). The globe is `radius` units round the screen's centre. With
-    /// `names` (the same screen's names painted alone), the names run on
-    /// past the rim, white on the black, instead of being cut by it, and
-    /// the rim gives way to them.
-    pub fn globe(&mut self, radius: f64, names: Option<&Picture>) {
+    /// A globe's picture (an `ortho` output) with space past its rim: black,
+    /// day or night, with the real stars of `sky` ([`sky::Sky`]), the rim
+    /// white on a bitmap, a grey Braille ring on text. The globe is
+    /// `radius` units round the screen's centre. With `names` (the same
+    /// screen's names painted alone), the names run on past the rim, light
+    /// on the black, instead of being cut by it, and the rim gives way to
+    /// them.
+    pub fn globe(&mut self, radius: f64, names: Option<&Picture>, sky: &sky::Sky) {
         match (self, names) {
             (Picture::Bitmap(b), names) => {
                 let names = match names {
                     Some(Picture::Bitmap(n)) if n.width == b.width && n.height == b.height => Some(n),
                     _ => None,
                 };
+                let (w, h) = (b.width, b.height);
+                // The stars, lit pixels: a bright one a small cross.
+                let mut lit = vec![false; w * h];
+                let mut light = |x: i64, y: i64| {
+                    if x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h {
+                        lit[y as usize * w + x as usize] = true;
+                    }
+                };
+                for star in sky.stars((w as f64, h as f64)) {
+                    let (x, y) = (star.x as i64, star.y as i64);
+                    light(x, y);
+                    if star.magnitude < 1.0 {
+                        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                            light(x + dx, y + dy);
+                        }
+                    }
+                }
                 // A name's ink, and a pixel round it (its halo): the rim
                 // stops short of it.
                 let ink = |x: usize, y: usize| names.is_some_and(|n| n.black(x, y) != n.invert);
-                let (w, h) = (b.width, b.height);
                 let near = |x: usize, y: usize| {
                     (x.saturating_sub(1)..=(x + 1).min(w - 1)).any(|i| (y.saturating_sub(1)..=(y + 1).min(h - 1)).any(|j| ink(i, j)))
                 };
-                // `put` takes the pixel before the screen's inversion: shown
-                // black is `!invert`. An inverted screen is a night's.
+                // `put` takes the pixel before the screen's inversion.
                 let invert = b.invert;
-                let night = invert;
                 let shown = |black: bool| black != invert;
                 let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
                 for y in 0..h {
                     for x in 0..w {
                         let d = (x as f64 + 0.5 - cx).hypot(y as f64 + 0.5 - cy);
                         if d > radius + 0.5 {
-                            let lit = ink(x, y) || (night && star(x, y, 211));
-                            b.put(x, y, shown(lit != night));
+                            b.put(x, y, shown(!(ink(x, y) || lit[y * w + x])));
                         } else if d > radius - 0.5 && !near(x, y) {
-                            b.put(x, y, shown(!night));
+                            b.put(x, y, shown(false));
                         }
                     }
                 }
@@ -148,19 +164,25 @@ impl Picture {
                 };
                 // A cell is one unit across and two down.
                 let (cx, cy) = (t.width as f64 / 2.0, t.height as f64);
-                // Night or day: the map's ground, dark or light.
-                let night = t.night();
-                let sky = if night { text::SPACE } else { text::DAY };
+                // The stars, the brightest in a cell kept.
+                let mut stars: Vec<Option<f64>> = vec![None; t.width * t.height];
+                for star in sky.stars((t.width as f64, t.height as f64 * 2.0)) {
+                    let i = (star.y / 2.0) as usize * t.width + star.x as usize;
+                    if stars[i].is_none_or(|m| star.magnitude < m) {
+                        stars[i] = Some(star.magnitude);
+                    }
+                }
                 for y in 0..t.height {
                     for x in 0..t.width {
                         let d = (x as f64 + 0.5 - cx).hypot((y as f64 + 0.5) * 2.0 - cy);
                         if d > radius + 0.5 {
                             match names.map(|n| *n.cell(x, y)).filter(|c| c.char() != ' ') {
                                 Some(mut c) => {
-                                    c.bg = Some(sky);
+                                    c.bg = Some(text::SPACE);
+                                    c.fg = c.fg.map(text::on_space);
                                     t.put(x, y, c);
                                 }
-                                None => t.space(x, y, sky, (night && star(x, y, 61)).then(|| if star(x, y, 7) { '+' } else { '·' })),
+                                None => t.space(x, y, stars[y * t.width + x]),
                             }
                         }
                     }
@@ -173,7 +195,7 @@ impl Picture {
                     let (x, y) = ((cx + radius * a.cos()) * 2.0, (cy + radius * a.sin()) * 2.0);
                     let cell = ((x / 2.0) as usize, (y / 4.0) as usize);
                     let named = names.is_some_and(|n| n.cell(cell.0.min(n.width - 1), cell.1.min(n.height - 1)).char() != ' ');
-                    let empty = cell.0 < t.width && cell.1 < t.height && matches!(t.cell(cell.0, cell.1).char(), ' ' | '·' | '+');
+                    let empty = cell.0 < t.width && cell.1 < t.height && t.cell(cell.0, cell.1).char() == ' ';
                     if empty && !named {
                         t.dot(x as i64, y as i64, Some(rim));
                     }
@@ -190,16 +212,6 @@ impl Picture {
             Picture::Text(t) => t.ansi(),
         }
     }
-}
-
-/// Whether a star shines at `(x, y)`: one place in about `one_in`, the
-/// same each frame.
-fn star(x: usize, y: usize, one_in: u64) -> bool {
-    let mut h = (x as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ (y as u64).wrapping_mul(0xc2b2_ae3d_27d4_eb4f);
-    h ^= h >> 31;
-    h = h.wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    h ^= h >> 29;
-    h % one_in == 0
 }
 
 /// Where the screen's top-left dot is in the world's dots: what patterns

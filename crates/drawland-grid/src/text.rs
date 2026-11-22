@@ -32,8 +32,16 @@ enum Kind {
 
 /// Space round a globe at night, and its stars; round a day's, paper.
 pub const SPACE: Rgb = Rgb(0, 0, 0);
-pub const DAY: Rgb = Rgb(0xf7, 0xf5, 0xf0);
-const STAR: Rgb = Rgb(0x8a, 0x92, 0xa6);
+
+/// A colour made to read on [`SPACE`]: a dark one lifted to near white.
+pub fn on_space(c: Rgb) -> Rgb {
+    let lum = 0.2126 * c.0 as f64 + 0.7152 * c.1 as f64 + 0.0722 * c.2 as f64;
+    if lum >= 110.0 {
+        return c;
+    }
+    let lift = |v: u8| (v as f64 + (255.0 - v as f64) * 0.8).round() as u8;
+    Rgb(lift(c.0), lift(c.1), lift(c.2))
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cell {
@@ -139,17 +147,18 @@ impl Text {
         }
     }
 
-    /// The cell at `(x, y)` made space: `sky`, with a star or none.
-    pub fn space(&mut self, x: usize, y: usize, sky: Rgb, star: Option<char>) {
+    /// The cell at `(x, y)` made space, black, with a star of `magnitude`
+    /// or none: the brighter, the bigger and whiter.
+    pub fn space(&mut self, x: usize, y: usize, magnitude: Option<f64>) {
+        let star = magnitude.map(|m| match m {
+            m if m < 1.0 => ('*', Rgb(0xf4, 0xf4, 0xff)),
+            m if m < 2.5 => ('+', Rgb(0xc4, 0xc8, 0xd6)),
+            m if m < 3.8 => ('·', Rgb(0xa0, 0xa6, 0xb6)),
+            _ => ('·', Rgb(0x5c, 0x62, 0x72)),
+        });
         if let Some(cell) = self.at(x as i64, y as i64) {
-            *cell = Cell { kind: star.map_or(Kind::Blank, Kind::Char), fg: Some(STAR), bg: Some(sky) };
+            *cell = Cell { kind: star.map_or(Kind::Blank, |s| Kind::Char(s.0)), fg: star.map(|s| s.1), bg: Some(SPACE) };
         }
-    }
-
-    /// Whether the map is a night's: its cells' grounds dark on the whole.
-    pub fn night(&self) -> bool {
-        let lums: Vec<f64> = self.cells.iter().filter_map(|c| c.bg).map(|c| 0.2126 * c.0 as f64 + 0.7152 * c.1 as f64 + 0.0722 * c.2 as f64).collect();
-        lums.is_empty() || lums.iter().sum::<f64>() / (lums.len() as f64) < 128.0
     }
 
     /// The cell at `(x, y)` set.

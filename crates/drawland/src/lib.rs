@@ -437,7 +437,7 @@ impl Drawer {
             let names: Vec<_> = layers.iter().filter(|l| matches!(l.shape, drawland_core::grammar_run::PaintShape::Names(_))).cloned().collect();
             drawland_grid::render(&screen, origin, &names)
         });
-        picture.globe(radius, names.as_ref());
+        picture.globe(radius, names.as_ref(), &drawland_grid::Sky { lng: output.center.0, lat: output.center.1, unix: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64()) });
         Ok(Painting { title: grammar.title.clone(), picture })
     }
 
