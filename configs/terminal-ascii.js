@@ -51,11 +51,37 @@ paint({ id: "streets", from: minor, line: { style: "ascii", color: INK.mid } })
 paint({ id: "rail", from: rail, line: { char: "=", color: INK.mid } })
 paint({ id: "roads", from: major, line: { style: "ascii", color: INK.bright } })
 
-paint({ id: "street_names", from: features.tiles("road_names"), text: { color: INK.mid, spacing: 50 } })
-paint({ id: "water_names", from: features.tiles("water_name:*"), text: { color: INK.mid } })
+// The names in a hierarchy (Mapbox expressions; the zoom counts
+// characters): from far the capitals and oceans, then cities in capitals
+// with a `*`, towns with a `+`, their quarters in the dim green, streets
+// only near.
+paint({
+  id: "street_names",
+  from: features.tiles("road_names"),
+  minzoom: 11,
+  filter: ["!=", ["get", "class"], "ferry"],
+  text: { color: INK.dim, spacing: 50 },
+})
+paint({
+  id: "water_names",
+  from: features.tiles("water_name:*"),
+  filter: ["any", ["match", ["get", "class"], ["ocean", "sea"], true, false], [">=", ["zoom"], 6]],
+  text: { color: INK.mid, upper: ["==", ["get", "class"], "ocean"] },
+})
 paint({
   id: "places",
   from: features.tiles("place:city,town,village,suburb,quarter,neighbourhood,island"),
-  text: { upper: true, marker: "*", color: INK.bright, padding: 2 },
+  filter: ["case",
+    ["==", ["get", "capital"], 2], true,
+    ["==", ["get", "class"], "city"], [">=", ["zoom"], 1],
+    ["==", ["get", "class"], "town"], [">=", ["zoom"], 5],
+    ["match", ["get", "class"], ["village", "suburb", "island"], true, false], [">=", ["zoom"], 8],
+    [">=", ["zoom"], 11]],
+  text: {
+    upper: ["match", ["get", "class"], ["city", "town"], true, false],
+    marker: ["match", ["get", "class"], "city", "*", "town", "+", null],
+    color: ["match", ["get", "class"], ["city", "town"], INK.bright, INK.mid],
+    padding: 2,
+  },
   halo: [1, 0],
 })

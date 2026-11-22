@@ -206,7 +206,7 @@ pub fn model(ui: &Ui, styles: &[Style], now: &Now, host: Host) -> Model {
         title: "theme".into(),
         key: Some('t'),
         label: format!("{} ▾", ui.theme),
-        short: "▾".into(),
+        short: format!("{}▾", ui.theme),
         options: themes.iter().map(|t| Button::new(*t, format!("theme:{t}")).on(*t == ui.theme)).collect(),
         right: true,
     });

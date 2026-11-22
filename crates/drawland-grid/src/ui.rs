@@ -165,9 +165,17 @@ pub struct Card {
     pub open_bottom: bool,
 }
 
+/// Narrower than this many cells (a phone), the column is a sheet over the
+/// whole screen: a third of it would cut every card's line short.
+const NARROW: usize = 72;
+
 /// The column's width in cells on a screen `width` across.
 fn column_width(width: usize) -> usize {
-    (width / 3).clamp(22, 34).min(width)
+    if width < NARROW {
+        width
+    } else {
+        (width / 3).clamp(22, 34)
+    }
 }
 
 impl Chrome {
@@ -256,14 +264,21 @@ impl Chrome {
         let right: usize = model.right.iter().map(|b| width(&b.label) + 1).sum();
         let menus = |short: bool| -> usize { model.menus.iter().map(|m| menu_width(m, short) + 1).sum::<usize>() + 2 };
         let short = brand + links + menus(false) + right > w;
+        // On a narrow bar the menus stay, short; the outward links go
+        // first, then the page's links, then the brand.
+        let fits = |b: bool, l: bool, r: bool| b as usize * brand + l as usize * links + menus(true) + r as usize * right <= w;
+        let (show_brand, show_links, show_right) =
+            [(true, true, true), (true, true, false), (true, false, false), (false, false, false)].into_iter().find(|&(b, l, r)| fits(b, l, r)).unwrap_or((false, false, false));
         let mut x = 0;
-        if brand > 0 && brand + links + menus(true) + right <= w {
+        if brand > 0 && show_brand {
             x += self.write(x, 0, &format!(" {} ", model.brand), Role::Brand, w) + 1;
         } else {
             x = 1;
         }
-        for b in &model.links {
-            x += self.button(x, 0, b, Role::Bar, w) + 1;
+        if show_links {
+            for b in &model.links {
+                x += self.button(x, 0, b, Role::Bar, w) + 1;
+            }
         }
         let (left, right_menus): (Vec<&Menu>, Vec<&Menu>) = model.menus.iter().partition(|m| !m.right);
         if !left.is_empty() {
@@ -274,7 +289,7 @@ impl Chrome {
         }
         // The right, from the edge in.
         let mut rx = w;
-        for b in model.right.iter().rev() {
+        for b in model.right.iter().rev().filter(|_| show_right) {
             let n = width(&b.label);
             if rx < x + n {
                 break;
@@ -390,7 +405,8 @@ impl Chrome {
     fn column(&mut self, lines: &[Line], scroll: usize) {
         let cw = column_width(self.width);
         let x0 = self.width - cw;
-        self.free = x0;
+        // A sheet over the whole screen leaves the map whole under it.
+        self.free = if x0 == 0 { self.width } else { x0 };
         let (top, bottom) = (1, self.height - 1);
         self.fill(x0, top, cw, bottom - top, Role::Ground);
         for y in top..bottom {
@@ -856,6 +872,23 @@ mod tests {
         assert_eq!(c.cell(col(&c, 5, "│ 12"), 5), Some(('│', Role::Seam)));
         assert!(c.zones.iter().all(|z| z.action != "column" || z.y == 1), "no floating tools");
         assert_eq!(c.hit(x0 + 5, 5), Some("size:10"));
+    }
+
+    #[test]
+    fn on_a_phone_the_menus_stay_and_the_column_is_a_sheet() {
+        // 46 characters: a phone's terminal page. The links go before the
+        // menus; the theme stays.
+        let c = Chrome::lay(&model(), 46, 50);
+        let bar = row(&c, 0);
+        assert!(bar.contains("terminal▾") && bar.contains("▾"), "{bar}");
+        assert!(c.zones.iter().any(|z| z.action == "open:theme"), "the theme menu stays: {bar}");
+        assert!(!bar.contains("GitHub"), "{bar}");
+        // The column covers the screen, the map whole under it.
+        let mut m = model();
+        m.column = Some(vec![Line::Head("place".into()), Line::Text("45.43750, 12.33580".into())]);
+        let c = Chrome::lay(&m, 46, 50);
+        assert_eq!(c.free, 46);
+        assert!((1..10).any(|y| row(&c, y).contains("45.43750, 12.33580")), "the card's line whole");
     }
 
     #[test]
