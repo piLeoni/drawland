@@ -10,7 +10,7 @@ the Python and Node packages are this crate.
 
 ```toml
 [dependencies]
-drawland = "0.3"
+drawland = "0.4"
 ```
 
 ```rust,no_run

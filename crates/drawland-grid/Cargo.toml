@@ -1,6 +1,6 @@
 [package]
 name = "drawland-grid"
-description = "draw.land on a screen: a map's layers painted into a 1-bit bitmap or a grid of text cells (ANSI, HTML)"
+description = "draw.land on a screen (experimental): a map's layers painted into a 1-bit bitmap or a grid of text cells (ANSI, HTML)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

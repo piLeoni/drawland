@@ -204,8 +204,8 @@ g.draw({ id: 'water', from: g.fills.fill({ in: water, pattern: 'waves', spacing:
 
 ```toml
 [dependencies]
-drawland = "0.3"         # draws: the library, the downloads, the engine
-drawland-graph = "0.3"   # builds a graph, nothing else
+drawland = "0.4"         # draws: the library, the downloads, the engine
+drawland-graph = "0.4"   # builds a graph, nothing else
 ```
 
 ```rust
@@ -290,6 +290,9 @@ one with `// @ts-check`). The Node package carries the same types for
 `Graph`.
 
 ## Screens: bitmaps and text
+
+> **Experimental.** Screens, `drawland view` and `drawland serve` are new and
+> may change in any release; paper is the stable part of draw.land.
 
 The same library paints screens too: a 1-bit **bitmap**, every pixel black
 or white, or a terminal's **text** cells, in colour.
