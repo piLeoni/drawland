@@ -1,5 +1,5 @@
 ---
-name: ship-release
+name: dl-release
 description: Publish draw.land — push the engine, release crates/PyPI/npm packages from the CI build, and/or deploy the draw.land website. Outward-facing and hard to undo; always confirm with the user which targets before acting. Use only when the user asks to push, release, publish, deploy, or put it online.
 ---
 
@@ -9,7 +9,7 @@ Everything here leaves the machine. Before each step, say what will be published
 
 ## Preconditions
 
-`ship-engine` (and `ship-faces` for packages, `ship-site` for the website) done and green; `main` fast-forwarded; no uncommitted changes of the user's swept in.
+`dl-engine` (and `dl-faces` for packages, `dl-site` for the website) done and green; `main` fast-forwarded; no uncommitted changes of the user's swept in.
 
 ## Targets
 

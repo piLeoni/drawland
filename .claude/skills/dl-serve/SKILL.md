@@ -1,5 +1,5 @@
 ---
-name: serve-local
+name: dl-serve
 description: Run draw.land locally for the user to look at — the draw.land web page (Vite dev server from ../drawland-web) and the moving screen maps (drawland serve for 1-bit and terminal styles) — rebuilt from the current code. Use when the user says "serve", "run it", "let me see", "start the servers", or after a change they need to try.
 ---
 

@@ -1,11 +1,11 @@
 ---
-name: ship-engine
+name: dl-engine
 description: Finish an accepted draw.land change in the engine repository — the library once in library.rs, types in drawland.d.ts, tests, example profiles type-checked, architecture docs and README updated, committed on the working branch and fast-forwarded to main. Use when the user accepts an MVP, says "make it proper", "finish it", "put it in the engine", or "in main".
 ---
 
 # Ship level 2: the engine
 
-Everything in this repository, finished. Includes `ship-mvp`'s result; adds what makes it permanent.
+Everything in this repository, finished. Includes `dl-mvp`'s result; adds what makes it permanent.
 
 ## Do
 
@@ -31,4 +31,4 @@ Everything in this repository, finished. Includes `ship-mvp`'s result; adds what
 
 ## Done when
 
-Tests green, profiles type-check, docs updated, `main` fast-forwarded. Say which docs changed. Offer `ship-faces` and `ship-site`.
+Tests green, profiles type-check, docs updated, `main` fast-forwarded. Say which docs changed. Offer `dl-faces` and `dl-site`.

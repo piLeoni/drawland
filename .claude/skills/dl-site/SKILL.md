@@ -1,11 +1,11 @@
 ---
-name: ship-site
+name: dl-site
 description: Carry a draw.land engine change to the draw.land web page (../drawland-web) — WASM rebuilt, presets re-run, online docs and reference updated, doc pictures drawn, the gallery styles using it where they should, checked in the browser — committed there, not deployed. Use when the user says "website", "online docs", "on the site", "in the presets/styles", "in City Grain", or wants to see it on the page.
 ---
 
 # Ship level 4: the website
 
-The engine change must be done (`ship-engine`). The page is the private repository `../drawland-web` (read its `AGENTS.md` and `docs/architecture/web.md`); it builds on `../drawland` directly.
+The engine change must be done (`dl-engine`). The page is the private repository `../drawland-web` (read its `AGENTS.md` and `docs/architecture/web.md`); it builds on `../drawland` directly.
 
 ## Do (from `../drawland-web`)
 
@@ -20,9 +20,9 @@ The engine change must be done (`ship-engine`). The page is the private reposito
    - Every example is a real profile type-checked by `npm test`; inline `<Code>` snippets are not, so keep them small and correct.
 6. **Pictures**: `./web/scripts/render-docs.sh examples <prefix>` (or `gallery <preset>`), needs `rsvg-convert` and `magick`. Commit the `.webp` files.
 7. **Tests**: `(cd web && npm test)`.
-8. **Look at it**: start the page with the `serve-local` skill and check the changed sections (and a phone width when layout changed: Chrome DevTools-protocol emulation, 390×844 @3x, touch on; plain headless Chrome cannot go under 500 px).
+8. **Look at it**: start the page with the `dl-serve` skill and check the changed sections (and a phone width when layout changed: Chrome DevTools-protocol emulation, 390×844 @3x, touch on; plain headless Chrome cannot go under 500 px).
 9. **Docs of the page**: `docs/architecture/web.md` (and `INDEX.md` if files moved).
-10. Commit in `../drawland-web`. Do not run `web/deploy.sh` unless the user asks: deploying publishes draw.land (`ship-release`).
+10. Commit in `../drawland-web`. Do not run `web/deploy.sh` unless the user asks: deploying publishes draw.land (`dl-release`).
 
 ## Done when
 
