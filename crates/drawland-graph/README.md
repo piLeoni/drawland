@@ -35,7 +35,10 @@ let graph = g.finish()?; // what drawland-core draws
   `g.output_remap(spec, &mut [&mut f])` takes a projection of your own as a
   Rust function of page points.
 - `g.page()` and `g.world()` answer about the frame while you build:
-  `world().to_page(lat, lng)`, `page().to_world([x, y])`.
+  `world().to_page(lat, lng)`, `page().to_world([x, y])`, `world().zoom()`.
+- Ranges by zoom or scale, as a Mapbox style writes them:
+  `world().at(json!(["step", ["zoom"], 1, 15, 3]))`, or the same array in a
+  call's options, is worked out for the map's zoom.
 - `Graph::call(name, args)` is the library by name, as the other languages
   call it.
 

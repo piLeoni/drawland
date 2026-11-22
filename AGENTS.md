@@ -52,6 +52,10 @@ once the result looks right do we carry it to the web page (its own
 repository, `../drawland-web`) and penfill's Python / Node / wasm bindings. Don't widen a
 change to every surface in the same step unless asked.
 
+## Shipping levels (skills)
+
+How far to carry a change, each level including the one before: `ship-mvp` (the CLI, judged by eye), `ship-engine` (library, types, tests, architecture docs, `main`), `ship-faces` (Python, Node, Rust and their READMEs), `ship-site` (`../drawland-web`: WASM, presets, online docs, pictures), `ship-release` (push, packages, deploy: outward, confirm first); `serve-local` runs it all to look at. They are in `.claude/skills/`.
+
 ## Build & test
 
 ```bash

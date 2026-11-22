@@ -50,7 +50,10 @@ drawland.draw(g).save("lake.svg")
   library's names (`exteriorOnly`, `minLength`); `in_` and `from_` are
   `in` and `from`. Snake case works for function names (`fill_holes`).
 - The frame while you build: `g.page.width`, `g.world.center`,
-  `g.world.toPage({"lat": …, "lng": …})`, `g.page.toWorld([x, y])`.
+  `g.world.zoom`, `g.world.toPage({"lat": …, "lng": …})`, `g.page.toWorld([x, y])`.
+- Ranges by zoom or scale, as a Mapbox style writes them: a list such as
+  `["step", ["zoom"], 1, 15, 3]` anywhere in a call's options is worked out
+  for the map's zoom; `g.world.at([...])` gives its value.
 - Your data: `g.features.geojson(gdf)` takes a GeoDataFrame or anything with
   `__geo_interface__`; numpy values are fine anywhere a number is.
 - Functions: `g.view(draw_inset, id="inset", at=[110, 8], size=[36, 24], lat=…, lng=…, scale="1:40000")`

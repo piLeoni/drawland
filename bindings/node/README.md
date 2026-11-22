@@ -46,7 +46,10 @@ g.compose.mask({ from: buildings, occludes: ['water'] })
 ```
 
 `g.view(spec, () => { … })` and a `remap` warp take Node functions; a view
-can name a JavaScript style beside `new Graph({ dir })`.
+can name a JavaScript style beside `new Graph({ dir })`. Ranges by zoom or
+scale are written as a Mapbox style writes them: `["step", ["zoom"], 1, 15, 3]`
+in a call's options is worked out for the map's zoom, and
+`g.world.at([...])` gives its value (`g.world.zoom` is the zoom).
 
 ## Reference
 
