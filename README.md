@@ -310,6 +310,23 @@ box drawing joined where lines cross, or ASCII; names are written in a pixel
 font (Spleen, four sizes) or a letter a cell, none over another. Patterns are
 fixed to the ground, so they stay put when the map moves.
 
+A look can change with the zoom and the feature, written as a Mapbox GL
+style writes it: a property may be an expression, and a layer takes
+`minzoom`, `maxzoom` and `filter`. The names in a hierarchy:
+
+```js
+paint({
+  id: "places",
+  from: features.tiles("place:*"),
+  filter: ["any", ["==", ["get", "class"], "city"], [">=", ["zoom"], 12]],
+  text: {
+    font: ["match", ["get", "class"],
+      "city", ["step", ["zoom"], "spleen-6x12", 9, "spleen-8x16", 12, "spleen-12x24"],
+      "spleen-5x8"],
+  },
+})
+```
+
 On a screen every length counts pixels or characters, not millimetres: a
 buffer of 2 is two pixels, `page.width` is the screen's width, and the scale
 is the ground one of them spans, `scale: "3m"`. A character is one unit

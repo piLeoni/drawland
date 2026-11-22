@@ -1220,14 +1220,17 @@ impl Graph {
         ])))
     }
 
-    /// `paint({ id, from, fill | line | text, halo })`: a layer of the
-    /// screen. What `from` is decides the look it takes: an area a `fill`,
-    /// lines a `line`, features a `text`.
+    /// `paint({ id, from, fill | line | text, halo, minzoom, maxzoom, filter })`:
+    /// a layer of the screen. What `from` is decides the look it takes: an
+    /// area a `fill`, lines a `line`, features a `text`. A look's property
+    /// may be a Mapbox expression (`["step", ["zoom"], …]`); `minzoom`,
+    /// `maxzoom` and `filter` say when the layer, or a feature of it, is
+    /// shown, as Mapbox's do.
     fn paint(&mut self, args: &[Arg]) -> Result<Arg> {
-        use drawland_core::paint::{Halo, Look};
+        use drawland_core::paint::{Halo, Shown, Style};
         let spec = self.object(at(args, 0), "paint")?.clone();
-        if let Some(extra) = spec.without(&["id", "from", "fill", "line", "text", "halo"]).keys().next() {
-            return self.fail(format!("paint: unknown key {extra} (id, from, fill, line, text, halo)"));
+        if let Some(extra) = spec.without(&["id", "from", "fill", "line", "text", "halo", "minzoom", "maxzoom", "filter"]).keys().next() {
+            return self.fail(format!("paint: unknown key {extra} (id, from, fill, line, text, halo, minzoom, maxzoom, filter)"));
         }
         let id = match spec.get("id") {
             Some(Arg::Str(s)) if !s.trim().is_empty() => s.clone(),
@@ -1253,18 +1256,25 @@ impl Graph {
             return self.fail(format!("paint {id:?}: from is {what}, painted with {key}, not {other}"));
         }
         let body = spec.get(key).map(Arg::to_json).unwrap_or_else(|| Value::Object(Map::new()));
-        let parse = |e: serde_json::Error| format!("paint {id:?}: {key}: {e}");
-        let look = match key {
-            "fill" => Look::Fill(serde_json::from_value(body).map_err(parse).or_else(|e| self.fail(e))?),
-            "line" => Look::Line(serde_json::from_value(body).map_err(parse).or_else(|e| self.fail(e))?),
-            _ => Look::Text(serde_json::from_value(body).map_err(parse).or_else(|e| self.fail(e))?),
+        let look = Style::new(key, body).or_else(|e| self.fail(format!("paint {id:?}: {e}")))?;
+        let zoom = |k: &str| -> Result<Option<f64>> {
+            match spec.get(k) {
+                None | Some(Arg::Null) => Ok(None),
+                Some(z) => match z.as_num() {
+                    Some(z) => Ok(Some(z)),
+                    None => self.fail(format!("paint {id:?}: {k} is a zoom, a number, got {}", describe(Some(z)))),
+                },
+            }
         };
+        let (minzoom, maxzoom) = (zoom("minzoom")?, zoom("maxzoom")?);
+        let filter = spec.get("filter").map(Arg::to_json);
+        let shown = Shown::new(minzoom, maxzoom, filter).or_else(|e| self.fail(format!("paint {id:?}: {e}")))?;
         let halo: Halo = match spec.get("halo") {
             None | Some(Arg::Null) => Halo::default(),
             Some(h) => serde_json::from_value(h.to_json())
                 .or_else(|_| self.fail(format!("paint {id:?}: halo is pixels or cells, n or [across, down], got {}", describe(Some(h)))))?,
         };
-        Ok(Arg::Str(self.add_paint(id, &from, look, halo)?))
+        Ok(Arg::Str(self.add_paint(id, &from, look, shown, halo)?))
     }
 
     fn modules_graticule(&mut self, args: &[Arg]) -> Result<Arg> {

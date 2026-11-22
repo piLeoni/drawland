@@ -1,7 +1,8 @@
 //! Names placed on the grid: in whole pixels or cells, level (or, along a
 //! road that runs down the screen, one letter under the other), none over
-//! another. The top layer's names are placed first, then each layer's in
-//! the order of importance `labels::named` gives.
+//! another. The layer of the largest letters is placed first (the top one
+//! of those alike), then each layer's names in the order of importance
+//! `labels::named` gives: a city's name before a quarter's.
 //!
 //! Where a name was in the last picture ([`Hints`]) is tried first, so a
 //! name on a road stays where it was on the ground as the map zooms, rather
@@ -26,9 +27,9 @@ pub struct Run {
     pub at: (f64, f64),
 }
 
-/// Where names were: by layer and text, the middles of their boxes, in grid
-/// units of the picture being placed.
-pub type Hints = HashMap<(usize, String), Vec<(f64, f64)>>;
+/// Where names were: by layer (its id) and text, the middles of their
+/// boxes, in grid units of the picture being placed.
+pub type Hints = HashMap<(String, String), Vec<(f64, f64)>>;
 
 /// A place's mark: its box's top-left, in grid units.
 #[derive(Clone, Debug, PartialEq)]
@@ -60,6 +61,7 @@ pub struct Metrics {
 /// One text layer to place.
 pub struct Layer<'a> {
     pub index: usize,
+    pub id: &'a str,
     pub paint: &'a TextPaint,
     pub names: &'a [Named],
     pub metrics: Metrics,
@@ -99,13 +101,16 @@ impl Box {
     }
 }
 
-/// Every layer's names, the last layer first. `size` is the grid's in units.
+/// Every layer's names: the largest letters first, then the last layer
+/// first. `size` is the grid's in units.
 pub fn place(layers: &[Layer], size: (i64, i64), hints: &Hints) -> Placed {
     let mut taken = Mask::new(size.0.max(0) as usize, size.1.max(0) as usize);
     let mut out = Placed::default();
-    for layer in layers.iter().rev() {
+    let mut order: Vec<&Layer> = layers.iter().collect();
+    order.sort_by_key(|l| (std::cmp::Reverse(l.metrics.letter.0 * l.metrics.letter.1), std::cmp::Reverse(l.index)));
+    for layer in order {
         let mut seen: HashMap<&str, Vec<(f64, f64)>> = HashMap::new();
-        let was = |named: &Named| hints.get(&(layer.index, named.text.clone())).map(Vec::as_slice).unwrap_or(&[]);
+        let was = |named: &Named| hints.get(&(layer.id.to_string(), named.text.clone())).map(Vec::as_slice).unwrap_or(&[]);
         // First every name where it was (a road's name is on every piece of
         // the road: the piece it was on must not lose it to one before it),
         // then the rest, as they come.
@@ -390,7 +395,7 @@ mod tests {
     use drawland_core::labels::Named;
 
     fn layer<'a>(paint: &'a TextPaint, names: &'a [Named]) -> Layer<'a> {
-        Layer { index: 0, paint, names, metrics: Metrics { letter: (1, 1), unit: (1.0, 2.0), size: (40, 20) } }
+        Layer { index: 0, id: "", paint, names, metrics: Metrics { letter: (1, 1), unit: (1.0, 2.0), size: (40, 20) } }
     }
 
     fn road(text: &str, pts: &[(f64, f64)]) -> Named {
@@ -415,12 +420,12 @@ mod tests {
         let names = vec![road("Main", &[(2.0, 10.0), (38.0, 10.0)])];
         let first = place(&[layer(&paint, &names)], (40, 20), &Hints::new()).runs[0].x;
         // Last time it was at x = 30: the road passes there, so there it goes.
-        let hints = Hints::from([((0, "Main".to_string()), vec![(30.0, 5.4)])]);
+        let hints = Hints::from([((String::new(), "Main".to_string()), vec![(30.0, 5.4)])]);
         let run = &place(&[layer(&paint, &names)], (40, 20), &hints).runs[0];
         assert_ne!(first, 28);
         assert_eq!((run.x, run.y), (28, 5));
         // A hint far off the road is no hint.
-        let hints = Hints::from([((0, "Main".to_string()), vec![(30.0, 15.0)])]);
+        let hints = Hints::from([((String::new(), "Main".to_string()), vec![(30.0, 15.0)])]);
         assert_eq!(place(&[layer(&paint, &names)], (40, 20), &hints).runs[0].x, first);
     }
 

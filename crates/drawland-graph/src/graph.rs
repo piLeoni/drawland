@@ -179,14 +179,13 @@ impl Graph {
     }
 
     /// A layer of the screen: `from` (a reference) painted as `look` says.
-    pub(crate) fn add_paint(&mut self, id: String, from: &str, look: drawland_core::paint::Look, halo: drawland_core::paint::Halo) -> Result<String> {
+    pub(crate) fn add_paint(&mut self, id: String, from: &str, look: drawland_core::paint::Style, shown: drawland_core::paint::Shown, halo: drawland_core::paint::Halo) -> Result<String> {
         let from = target(from).map_err(|e| self.error(format!("paint: {e}")))?;
-        look.validate().map_err(|e| self.error(format!("paint {id:?}: {e}")))?;
         if self.top_ref().paint.iter().any(|p| p.id == id) {
             return Err(self.error(format!("paint: the id {id:?} is already painted")));
         }
         let at = self.at;
-        self.top().paint.push(drawland_core::paint::Paint { id: id.clone(), from, look, halo, at });
+        self.top().paint.push(drawland_core::paint::Paint { id: id.clone(), from, look, shown, halo, at });
         Ok(id)
     }
 

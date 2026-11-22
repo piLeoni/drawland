@@ -951,13 +951,19 @@ struct RawPaint {
     id: String,
     from: String,
     #[serde(default)]
-    fill: Option<crate::paint::FillPaint>,
+    fill: Option<Value>,
     #[serde(default)]
-    line: Option<crate::paint::LinePaint>,
+    line: Option<Value>,
     #[serde(default)]
-    text: Option<crate::paint::TextPaint>,
+    text: Option<Value>,
     #[serde(default)]
     halo: crate::paint::Halo,
+    #[serde(default)]
+    minzoom: Option<f64>,
+    #[serde(default)]
+    maxzoom: Option<f64>,
+    #[serde(default)]
+    filter: Option<Value>,
     #[serde(default)]
     at: Option<At>,
 }
@@ -1241,12 +1247,12 @@ fn build(raw: Raw) -> Result<Grammar, GrammarError> {
             let from = parse_output(&p.from)?;
             // Lines and features have a look by default; an area says its fill.
             let kind = if from.module.is_some() { Section::Lines } else { from.name.section };
-            let look = match (p.fill, p.line, p.text) {
-                (Some(f), None, None) => crate::paint::Look::Fill(f),
-                (None, Some(l), None) => crate::paint::Look::Line(l),
-                (None, None, Some(t)) => crate::paint::Look::Text(t),
-                (None, None, None) if kind == Section::Lines => crate::paint::Look::Line(Default::default()),
-                (None, None, None) if kind == Section::Features => crate::paint::Look::Text(Default::default()),
+            let (key, body) = match (p.fill, p.line, p.text) {
+                (Some(f), None, None) => ("fill", f),
+                (None, Some(l), None) => ("line", l),
+                (None, None, Some(t)) => ("text", t),
+                (None, None, None) if kind == Section::Lines => ("line", serde_json::json!({})),
+                (None, None, None) if kind == Section::Features => ("text", serde_json::json!({})),
                 _ => {
                     return Err(GrammarError::Invalid(located(
                         &format!("paint {:?}: one of fill, line or text", p.id),
@@ -1254,7 +1260,10 @@ fn build(raw: Raw) -> Result<Grammar, GrammarError> {
                     )))
                 }
             };
-            Ok(crate::paint::Paint { id: p.id, from, look, halo: p.halo, at: p.at })
+            let fail = |m: String| GrammarError::Invalid(located(&format!("paint {:?}: {m}", p.id), p.at));
+            let look = crate::paint::Style::new(key, body).map_err(fail)?;
+            let shown = crate::paint::Shown::new(p.minzoom, p.maxzoom, p.filter).map_err(fail)?;
+            Ok(crate::paint::Paint { id: p.id, from, look, shown, halo: p.halo, at: p.at })
         })
         .collect::<Result<Vec<_>, GrammarError>>()?;
     let mut output = raw.output;
@@ -2257,6 +2266,15 @@ impl Grammar {
                     if !p.halo.is_none() {
                         v["halo"] = json!(p.halo);
                     }
+                    if let Some(z) = p.shown.minzoom {
+                        v["minzoom"] = json!(z);
+                    }
+                    if let Some(z) = p.shown.maxzoom {
+                        v["maxzoom"] = json!(z);
+                    }
+                    if let Some((f, _)) = &p.shown.filter {
+                        v["filter"] = f.clone();
+                    }
                     if let Some(at) = p.at {
                         v["at"] = json!(at);
                     }
@@ -2359,14 +2377,12 @@ fn validate_label_pick(g: &Grammar, def: &Def, pick: &LabelPick) -> Result<(), G
 /// What each paint entry paints is defined and fits its look: an area is
 /// filled, lines are lined, features are named. Ids are unique.
 fn validate_paint(g: &Grammar) -> Result<(), GrammarError> {
-    use crate::paint::Look;
     let mut ids = BTreeSet::new();
     for p in &g.paint {
         let fail = |m: String| GrammarError::Invalid(located(&format!("paint {:?}: {m}", p.id), p.at));
         if !ids.insert(p.id.as_str()) {
             return Err(fail("the id is painted twice".into()));
         }
-        p.look.validate().map_err(fail)?;
         let kind = match &p.from.module {
             Some(m) => {
                 if g.module(m).is_none() {
@@ -2381,13 +2397,22 @@ fn validate_paint(g: &Grammar) -> Result<(), GrammarError> {
                 p.from.name.section
             }
         };
-        let wants = match (&p.look, kind) {
-            (Look::Fill(_), Section::Areas) | (Look::Line(_), Section::Lines) | (Look::Text(_), Section::Features) => None,
+        let wants = match (p.look.key(), kind) {
+            ("fill", Section::Areas) | ("line", Section::Lines) | ("text", Section::Features) => None,
             (_, Section::Fills) => Some("a fill's strokes are for paper: paint its area with a fill pattern instead".to_string()),
-            (Look::Fill(_), _) => Some(format!("fill paints an area, not ${kind}")),
-            (Look::Line(_), _) => Some(format!("line paints lines, not ${kind}")),
-            (Look::Text(_), _) => Some(format!("text names features, not ${kind}")),
+            ("fill", _) => Some(format!("fill paints an area, not ${kind}")),
+            ("line", _) => Some(format!("line paints lines, not ${kind}")),
+            _ => Some(format!("text names features, not ${kind}")),
         };
+        // An area or lines are geometry made from features, their tags gone:
+        // only names read them.
+        if p.look.key() != "text" && p.look.reads().or(p.shown.reads()).feature {
+            return Err(fail(format!(
+                "{} reads a feature's tags ([\"get\", …]), which only names keep: split the features with features.where before they become {}",
+                p.look.key(),
+                if p.look.key() == "fill" { "an area" } else { "lines" }
+            )));
+        }
         if let Some(m) = wants {
             return Err(fail(m));
         }

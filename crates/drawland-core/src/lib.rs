@@ -2,6 +2,7 @@
 
 pub mod board;
 pub mod contours;
+pub mod expr;
 pub mod budget;
 pub mod fill;
 pub mod frame;

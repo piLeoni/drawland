@@ -11,7 +11,7 @@
 
 use crate::place::{Hints, Placed};
 use crate::Picture;
-use drawland_core::grammar_run::{PaintShape, Painted};
+use drawland_core::grammar_run::{Layer, PaintShape, Painted};
 use drawland_core::labels::{Named, Shape};
 use drawland_core::output::Output;
 use drawland_core::paint::Screen;
@@ -51,6 +51,13 @@ impl View {
         View { center: mercator(lon, lat), per_unit: scale / 1000.0 / lat.to_radians().cos(), screen }
     }
 
+    /// The zoom and scale a frame of this view is drawn at, for the
+    /// layers' expressions.
+    pub fn frame(&self) -> drawland_core::expr::Frame {
+        let (_, lat) = geographic(self.center);
+        drawland_core::expr::Frame::new(self.per_unit * lat.to_radians().cos(), lat)
+    }
+
     /// An output's view, when it is web Mercator, north up and unbent.
     pub fn of(output: &Output, screen: Screen) -> Option<View> {
         let plain = output.projection == ProjectionMode::Webmercator && output.bearing.rem_euclid(360.0) == 0.0;
@@ -86,7 +93,7 @@ impl View {
 ///   over; held to the screen, the sea stays still and the coast moves.
 #[derive(Clone, Debug, Default)]
 pub struct Recall {
-    names: HashMap<(usize, String), Vec<(f64, f64)>>,
+    names: HashMap<(String, String), Vec<(f64, f64)>>,
     anchor: Option<Anchor>,
     /// The scale of the last frame, and where the world's origin was on
     /// its screen (units).
@@ -138,11 +145,12 @@ impl Recall {
     }
 
     /// Where the names are now (`ground` from grid units to web Mercator
-    /// metres), forgetting where they were.
-    pub fn keep(&mut self, placed: &Placed, ground: impl Fn((f64, f64)) -> (f64, f64)) {
+    /// metres), forgetting where they were. `layers` are the picture's.
+    pub fn keep(&mut self, placed: &Placed, layers: &[Painted], ground: impl Fn((f64, f64)) -> (f64, f64)) {
         self.names.clear();
         for run in &placed.runs {
-            self.names.entry((run.layer, run.text.iter().collect())).or_default().push(ground(run.at));
+            let id = layers.get(run.layer).map_or(String::new(), |l| l.id.clone());
+            self.names.entry((id, run.text.iter().collect())).or_default().push(ground(run.at));
         }
     }
 
@@ -155,7 +163,7 @@ impl Recall {
         let (x0, y0) = (view.center.0 - w / 2.0 * view.per_unit, view.center.1 + h / 2.0 * view.per_unit);
         let grid = |(mx, my): (f64, f64)| ((mx - x0) / view.per_unit / cw, (y0 - my) / view.per_unit / ch);
         let (picture, placed) = crate::render_hinted(&view.screen, origin, layers, &self.hints(grid));
-        self.keep(&placed, |(gx, gy)| (x0 + gx * cw * view.per_unit, y0 - gy * ch * view.per_unit));
+        self.keep(&placed, layers, |(gx, gy)| (x0 + gx * cw * view.per_unit, y0 - gy * ch * view.per_unit));
         picture
     }
 }
@@ -165,14 +173,15 @@ impl Recall {
 #[derive(Clone, Debug)]
 pub struct Scene {
     view: View,
-    layers: Vec<Painted>,
+    /// As the graph gave them: resolved for each frame's zoom.
+    layers: Vec<Layer>,
     /// Each layer's pieces' boxes (polygons, lines, names), in its units.
     boxes: Vec<Vec<Rect<f64>>>,
 }
 
 impl Scene {
     /// The layers painted for `view` (its screen the scene's whole area).
-    pub fn new(view: View, layers: Vec<Painted>) -> Scene {
+    pub fn new(view: View, layers: Vec<Layer>) -> Scene {
         let none = || Rect::new(Coord { x: f64::NAN, y: f64::NAN }, Coord { x: f64::NAN, y: f64::NAN });
         let boxes = layers
             .iter()
@@ -255,7 +264,7 @@ impl Scene {
         let (x0, y0) = ((-t.x) / k - margin, (-t.y) / k - margin);
         let (x1, y1) = ((vw - t.x) / k + margin, (vh - t.y) / k + margin);
         let seen = |r: &Rect<f64>| r.max().x >= x0 && r.min().x <= x1 && r.max().y >= y0 && r.min().y <= y1;
-        let layers: Vec<Painted> = self
+        let layers: Vec<Layer> = self
             .layers
             .iter()
             .zip(&self.boxes)
@@ -275,9 +284,10 @@ impl Scene {
                             .collect(),
                     ),
                 };
-                Painted { id: l.id.clone(), look: l.look.clone(), halo: l.halo, shape }
+                Layer { shape, ..l.clone_bare() }
             })
             .collect();
+        let layers = drawland_core::grammar_run::resolve(layers, view.frame());
         // Grid units on this screen to web Mercator metres and back, through
         // the scene's units (`to` and its inverse).
         let (sx, sy) = (self.view.center.0 - sw / 2.0 * self.view.per_unit, self.view.center.1 + sh / 2.0 * self.view.per_unit);
@@ -291,12 +301,12 @@ impl Scene {
         };
         let origin = recall.origin(view, origin);
         let (mut picture, placed) = crate::render_hinted(&view.screen, origin, &layers, &recall.hints(grid));
-        recall.keep(&placed, ground);
+        recall.keep(&placed, &layers, ground);
         // The scene's edge, a cell and a half in: its own shores and lines
         // along it are the edge of what was fetched, not of the land.
         let (mx, my) = (1.5 * cw, 1.5 * ch);
         let (x0, y0, x1, y1) = (t.x + mx, t.y + my, t.x + sw * k - mx, t.y + sh * k - my);
-        crate::incognita::fill(&mut picture, &view.screen, origin, &crate::incognita::sea(&self.layers), |x, y| x < x0 || x > x1 || y < y0 || y > y1, seconds);
+        crate::incognita::fill(&mut picture, &view.screen, origin, &crate::incognita::sea(&layers), |x, y| x < x0 || x > x1 || y < y0 || y > y1, seconds);
         (picture, (exact.x - t.x, exact.y - t.y))
     }
 }
@@ -333,7 +343,7 @@ mod tests {
         let at = View::at(12.0, 45.0, 3000.0, wide);
         // A black square 4 pixels wide at the scene's middle.
         let solid = Look::Fill(FillPaint { pattern: Some("solid".into()), ..FillPaint::default() });
-        let layers = vec![Painted { id: "a".into(), look: solid, halo: Halo(0, 0), shape: PaintShape::Area(MultiPolygon::new(vec![square(18.0, 18.0, 4.0)])) }];
+        let layers = vec![Painted { id: "a".into(), look: solid, halo: Halo(0, 0), shape: PaintShape::Area(MultiPolygon::new(vec![square(18.0, 18.0, 4.0)])) }.into()];
         let scene = Scene::new(at, layers);
         let black = |v: &View| match scene.render(v).0 {
             Picture::Bitmap(b) => (0..10).flat_map(|y| (0..10).map(move |x| (x, y))).filter(|&(x, y)| b.black(x, y)).collect::<Vec<_>>(),
@@ -373,7 +383,7 @@ mod tests {
         let at = View::at(12.0, 45.0, 3000.0, wide);
         let solid = Look::Fill(FillPaint { pattern: Some("solid".into()), ..FillPaint::default() });
         let all = square(0.0, 0.0, 40.0);
-        let scene = Scene::new(at, vec![Painted { id: "water".into(), look: solid, halo: Halo(0, 0), shape: PaintShape::Area(MultiPolygon::new(vec![all])) }]);
+        let scene = Scene::new(at, vec![Painted { id: "water".into(), look: solid, halo: Halo(0, 0), shape: PaintShape::Area(MultiPolygon::new(vec![all])) }.into()]);
         let far = View { per_unit: at.per_unit * 4.0, ..at };
         let black = |t: f64| match scene.render_recalling(&far, &mut Recall::default(), t).0 {
             Picture::Bitmap(b) => (0..40).flat_map(|y| (0..40).map(move |x| (x, y))).filter(|&(x, y)| b.black(x, y)).collect::<Vec<_>>(),
@@ -412,7 +422,7 @@ mod tests {
         let pts: Vec<Coord<f64>> = (0..=21).map(|i| Coord { x: 72.0 + i as f64 * 5.0, y: 61.0 + if i % 2 == 0 { 0.0 } else { 0.3 } }).collect();
         let named = Named { text: "Calle Lunga".into(), rank: 0.5, extent: 1.0, shape: Shape::Road(pts), feature: 0 };
         let look = Look::Text(drawland_core::paint::TextPaint { spacing: 1000, ..Default::default() });
-        let scene = Scene::new(at, vec![Painted { id: "n".into(), look, halo: Halo(0, 0), shape: PaintShape::Names(vec![named]) }]);
+        let scene = Scene::new(at, vec![Painted { id: "n".into(), look, halo: Halo(0, 0), shape: PaintShape::Names(vec![named]) }.into()]);
         // Where the name starts on the screen, in columns from its middle.
         let start = |v: &View, recall: &mut Recall| match scene.render_recalling(v, recall, 0.0).0 {
             Picture::Text(t) => t.txt().lines().find_map(|l| l.find("Calle").map(|i| l[..i].chars().count() as f64 - 30.0)).unwrap(),

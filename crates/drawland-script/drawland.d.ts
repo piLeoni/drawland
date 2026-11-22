@@ -624,6 +624,44 @@ interface Screen {
 /** A colour: `#rgb`, `#rrggbb`, or a terminal name (`black`, `red`, `blue`, `brightcyan`, `gray`…). */
 type Color = string
 
+/**
+ * A Mapbox GL / MapLibre expression: a value that depends on the zoom or on
+ * the feature's tags, written as Mapbox writes it. A subset of Mapbox's
+ * operators, and `["scale"]` (the ground a unit spans, metres) besides:
+ *
+ *   ["step", ["zoom"], "spleen-6x12", 8, "spleen-8x16", 12, "spleen-12x24"]
+ *   ["match", ["get", "class"], ["city", "town"], "spleen-8x16", "spleen-5x8"]
+ *   ["interpolate", ["linear"], ["zoom"], 12, 1, 18, 4]
+ *
+ * The zoom is Mapbox's at the view's centre (the world 512 units across at
+ * zoom 0; a unit a pixel on a bitmap, a character on text). A tag that reads
+ * as a number is one (`["==", ["get", "capital"], 2]`). An expression that
+ * gives `null`, or a value its property cannot take, leaves the property
+ * at its default; a number is rounded where a property counts whole pixels.
+ */
+type Expression =
+  | ["literal", unknown]
+  | ["get", string]
+  | ["has", string]
+  | ["zoom"]
+  | ["scale"]
+  | ["coalesce", ...ExpressionValue[]]
+  | ["match", ExpressionValue, ...ExpressionValue[]]
+  | ["case", ...ExpressionValue[]]
+  | ["step", ExpressionValue, ...ExpressionValue[]]
+  | ["interpolate", ["linear"] | ["exponential", number], ExpressionValue, ...ExpressionValue[]]
+  | ["==" | "!=" | "<" | "<=" | ">" | ">=", ExpressionValue, ExpressionValue]
+  | ["all" | "any" | "+" | "*" | "min" | "max" | "concat", ...ExpressionValue[]]
+  | ["!" | "to-number" | "to-string" | "to-boolean" | "upcase" | "downcase", ExpressionValue]
+  | ["-", ExpressionValue]
+  | ["-" | "/" | "%", ExpressionValue, ExpressionValue]
+
+/** An expression's argument: an expression, a value, or (a `match` label) a list of values. */
+type ExpressionValue = Expression | string | number | boolean | null | (string | number | boolean)[]
+
+/** A property's value, or an expression that gives it. */
+type Styled<T> = T | Expression
+
 /** The patterns a screen area is filled with, 8 × 8 pixels each (on text, in Braille dots). */
 type ScreenPattern =
   | "solid" | "dots" | "sparse" | "grid" | "lines" | "columns" | "hatch" | "backhatch" | "cross" | "checker"
@@ -632,41 +670,41 @@ type ScreenPattern =
 /** How a screen area is covered: one of `pattern`, `tone`, `chars`, `blocks`, and/or a `background`. */
 interface FillPaint {
   /** A pixel pattern, tiled from a fixed point of the world so it stays put as the map moves. */
-  pattern?: ScreenPattern
+  pattern?: Styled<ScreenPattern>
   /** A grey, 0 (white) to 1 (black), dithered (ordered, so it holds still as the map moves). */
-  tone?: number
+  tone?: Styled<number>
   /** Text: characters tiled over the area, a string along each row or rows of them (`["~ ", " ~"]`). */
-  chars?: string | string[]
+  chars?: Styled<string | string[]>
   /** Text: the area in quarter-cell blocks (`▖▝▀▙█`), its edge twice as fine as a cell. */
-  blocks?: boolean
+  blocks?: Styled<boolean>
   /** Text: the characters' colour. */
-  color?: Color
+  color?: Styled<Color>
   /** Text: the cells' colour under the characters. */
-  background?: Color
+  background?: Styled<Color>
   /** Bitmap: the ink the pattern is laid in, `"black"` (default) or `"white"`. */
-  ink?: "black" | "white"
+  ink?: Styled<"black" | "white">
   /** Default `true`: the pattern's gaps are cleared. `false`: what lies under shows through them. */
-  opaque?: boolean
+  opaque?: Styled<boolean>
 }
 
 /** How lines are drawn on a screen, with no anti-aliasing. */
 interface LinePaint {
   /** Bitmap: pixels across. Default 1. */
-  width?: number
+  width?: Styled<number>
   /** Bitmap: pixels on, pixels off. */
-  dash?: [number, number]
+  dash?: Styled<[number, number]>
   /** Bitmap: `"black"` (default) or `"white"`. */
-  ink?: "black" | "white"
+  ink?: Styled<"black" | "white">
   /**
    * Text: Braille dots (default, the finest), box drawing joined where lines
    * meet (`"box"`, `"heavy"`, `"double"`, `"round"`: a slanted stretch is
    * drawn in dots), or `"ascii"` (`- | / \ +`).
    */
-  style?: "braille" | "box" | "heavy" | "double" | "round" | "ascii"
+  style?: Styled<"braille" | "box" | "heavy" | "double" | "round" | "ascii">
   /** Text: one character in every cell the line crosses. */
-  char?: string
-  color?: Color
-  background?: Color
+  char?: Styled<string>
+  color?: Styled<Color>
+  background?: Styled<Color>
 }
 
 /** How names are written on a screen: level, or along a road that runs down the screen one letter under the other; none over another. */
@@ -674,19 +712,19 @@ interface TextPaint {
   /** The tags the name is read from, the first one present. Default `["name"]`. */
   keys?: string[]
   /** In capitals. */
-  upper?: boolean
+  upper?: Styled<boolean>
   /** Bitmap: a pixel font (Spleen). Default `"spleen-6x12"`. */
-  font?: "spleen-5x8" | "spleen-6x12" | "spleen-8x16" | "spleen-12x24"
+  font?: Styled<"spleen-5x8" | "spleen-6x12" | "spleen-8x16" | "spleen-12x24">
   /** A mark at a place's point, its name beside it: a character on text (`"•"`), a dot so many pixels across on a bitmap (`4`). */
-  marker?: string | number
+  marker?: Styled<string | number>
   /** Pixels or cells between two labels of the same name. Default 60. */
-  spacing?: number
+  spacing?: Styled<number>
   /** Clear pixels or cells kept between this layer's names and any other's. Default 1. */
-  padding?: number
+  padding?: Styled<number>
   /** Bitmap: `"black"` (default) or `"white"`. */
-  ink?: "black" | "white"
-  color?: Color
-  background?: Color
+  ink?: Styled<"black" | "white">
+  color?: Styled<Color>
+  background?: Styled<Color>
 }
 
 interface PaintBase {
@@ -698,6 +736,17 @@ interface PaintBase {
    * halo is the other ink (white round black).
    */
   halo?: number | [number, number]
+  /** Shown from this zoom on (Mapbox's `minzoom`). */
+  minzoom?: number
+  /** Shown below this zoom (Mapbox's `maxzoom`). */
+  maxzoom?: number
+  /**
+   * The features shown: those this expression keeps (Mapbox's `filter`),
+   * `["all", ["==", ["get", "class"], "suburb"], [">=", ["zoom"], 12]]` say.
+   * Its tags are only a named feature's: on an area or lines, it reads the
+   * zoom alone.
+   */
+  filter?: Expression | boolean
 }
 
 /** One layer of a screen: an area filled, lines lined or features named, by what `from` is. */

@@ -56,11 +56,46 @@ paint({ id: "rail", from: rail, line: { dash: [4, 2] }, halo: 1 })
 paint({ id: "road_edges", from: major, line: { width: 5 }, halo: 1 })
 paint({ id: "roads", from: major, line: { width: 3, ink: "white" } })
 
-paint({ id: "street_names", from: streetNames, text: { font: "spleen-5x8", spacing: 220 }, halo: 1 })
-paint({ id: "water_names", from: features.tiles("water_name:*"), text: { font: "spleen-6x12" }, halo: 1 })
+// The names in a hierarchy, by the zoom and what is named (Mapbox
+// expressions, as a web map's style writes them): from far, the oceans
+// largest, then the seas, the capitals small with a dot; nearer, a city's
+// name grows past its quarters', which come in only near, smallest.
+paint({ id: "street_names", from: streetNames, minzoom: 14, filter: ["!=", ["get", "class"], "ferry"], text: { font: "spleen-5x8", spacing: 220 }, halo: 1 })
+paint({
+  id: "water_names",
+  from: features.tiles("water_name:*"),
+  filter: ["any", ["match", ["get", "class"], ["ocean", "sea"], true, false], [">=", ["zoom"], 9]],
+  text: {
+    font: ["match", ["get", "class"],
+      "ocean", ["step", ["zoom"], "spleen-8x16", 6, "spleen-6x12"],
+      "sea", "spleen-6x12",
+      ["step", ["zoom"], "spleen-5x8", 14, "spleen-6x12"]],
+  },
+  halo: 1,
+})
 paint({
   id: "places",
   from: features.tiles("place:city,town,village,suburb,quarter,neighbourhood,island"),
-  text: { font: "spleen-8x16", upper: true, marker: 5, padding: 2 },
+  // Capitals from the globe on, cities from a continent's width, then
+  // towns, villages and suburbs, quarters last.
+  filter: ["case",
+    ["==", ["get", "capital"], 2], true,
+    ["==", ["get", "class"], "city"], [">=", ["zoom"], 4],
+    ["==", ["get", "class"], "town"], [">=", ["zoom"], 8],
+    ["match", ["get", "class"], ["village", "suburb", "island"], true, false], [">=", ["zoom"], 11],
+    [">=", ["zoom"], 14]],
+  text: {
+    // A country's capital a step ahead of its cities.
+    font: ["match", ["get", "class"],
+      "city", ["case",
+        ["==", ["get", "capital"], 2], ["step", ["zoom"], "spleen-6x12", 6, "spleen-8x16", 10, "spleen-12x24"],
+        ["step", ["zoom"], "spleen-5x8", 6, "spleen-6x12", 9, "spleen-8x16", 12, "spleen-12x24"]],
+      "town", ["step", ["zoom"], "spleen-5x8", 11, "spleen-6x12", 13, "spleen-8x16"],
+      ["suburb", "village", "island"], ["step", ["zoom"], "spleen-5x8", 14, "spleen-6x12", 16, "spleen-8x16"],
+      ["step", ["zoom"], "spleen-5x8", 16, "spleen-6x12"]],
+    upper: ["match", ["get", "class"], ["city", "town", "suburb"], true, false],
+    marker: ["match", ["get", "class"], "city", 5, "town", 4, "village", 3, null],
+    padding: 2,
+  },
   halo: 2,
 })

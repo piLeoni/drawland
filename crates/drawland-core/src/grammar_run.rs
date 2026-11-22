@@ -186,8 +186,101 @@ pub fn run_into(grammar: &Grammar, output: &Output, inputs: Inputs, draw: &Task,
     run_graph(grammar, output, inputs, draw, out, Want::Write)
 }
 
-/// What one `paint` entry paints, in output millimetres: its geometry, and
-/// how the entry says to paint it.
+/// One `paint` entry evaluated: its geometry, in output units, and its look
+/// as written, expressions and all; [`resolve`] makes it the layers of a
+/// frame.
+#[derive(Debug, Clone)]
+pub struct Layer {
+    pub id: String,
+    pub style: crate::paint::Style,
+    pub shown: crate::paint::Shown,
+    pub halo: crate::paint::Halo,
+    pub shape: PaintShape,
+    /// The named features' tags, by `Named::feature`, when the look or the
+    /// filter reads them (empty otherwise).
+    pub tags: std::sync::Arc<Vec<crate::osm::Tags>>,
+}
+
+impl Layer {
+    /// The layer with no geometry: its look, its showing, its tags, to be
+    /// given other geometry (`Layer { shape, ..l.clone_bare() }`).
+    pub fn clone_bare(&self) -> Layer {
+        Layer { id: self.id.clone(), style: self.style.clone(), shown: self.shown.clone(), halo: self.halo, shape: PaintShape::Lines(Vec::new()), tags: self.tags.clone() }
+    }
+}
+
+impl From<Painted> for Layer {
+    /// A layer of one look, shown always.
+    fn from(p: Painted) -> Layer {
+        Layer { id: p.id, style: crate::paint::Style::fixed(p.look), shown: Default::default(), halo: p.halo, shape: p.shape, tags: Default::default() }
+    }
+}
+
+/// The layers as a frame shows them: those its zoom hides left out, each
+/// look resolved for the frame, the features a filter drops dropped. A
+/// layer of names whose look reads their tags becomes one layer for each
+/// look its names take, in its place, the larger letters over (and placed
+/// before) the smaller.
+pub fn resolve(layers: Vec<Layer>, frame: crate::expr::Frame) -> Vec<Painted> {
+    use crate::expr::Context;
+    use crate::paint::Look;
+    let mut out = Vec::new();
+    for layer in layers {
+        if !layer.shown.at(frame.zoom) {
+            continue;
+        }
+        let at = Context { frame, tags: None };
+        let per_feature = layer.style.reads().or(layer.shown.reads()).feature;
+        let upper = |look: &Look, n: &mut crate::labels::Named| {
+            if matches!(look, Look::Text(t) if t.upper) {
+                n.text = n.text.to_uppercase();
+            }
+        };
+        match layer.shape {
+            PaintShape::Names(names) if per_feature => {
+                let mut groups: Vec<(Look, Vec<crate::labels::Named>)> = Vec::new();
+                for mut n in names {
+                    let cx = Context { frame, tags: layer.tags.get(n.feature) };
+                    if !layer.shown.keeps(&cx) {
+                        continue;
+                    }
+                    let Some(look) = layer.style.resolve(&cx) else { continue };
+                    upper(&look, &mut n);
+                    match groups.iter_mut().find(|(l, _)| *l == look) {
+                        Some((_, g)) => g.push(n),
+                        None => groups.push((look, vec![n])),
+                    }
+                }
+                // The larger letters last: over the others, and placed first.
+                groups.sort_by_key(|(l, _)| match l {
+                    Look::Text(t) => crate::paint::FONTS.iter().position(|f| *f == t.font).unwrap_or(0),
+                    _ => 0,
+                });
+                for (look, names) in groups {
+                    out.push(Painted { id: layer.id.clone(), look, halo: layer.halo, shape: PaintShape::Names(names) });
+                }
+            }
+            shape => {
+                if !layer.shown.keeps(&at) {
+                    continue;
+                }
+                let Some(look) = layer.style.resolve(&at) else { continue };
+                let shape = match shape {
+                    PaintShape::Names(mut names) => {
+                        names.iter_mut().for_each(|n| upper(&look, n));
+                        PaintShape::Names(names)
+                    }
+                    other => other,
+                };
+                out.push(Painted { id: layer.id, look, halo: layer.halo, shape });
+            }
+        }
+    }
+    out
+}
+
+/// One layer of a frame: its geometry, in output units, and the look it is
+/// painted in.
 #[derive(Debug, Clone)]
 pub struct Painted {
     pub id: String,
@@ -206,8 +299,9 @@ pub enum PaintShape {
 }
 
 /// The graph's `paint` entries evaluated against `inputs`, bottom first: the
-/// layers a screen is covered with (`drawland-grid` paints them).
-pub fn paint(grammar: &Grammar, output: &Output, inputs: Inputs, draw: &Task) -> Result<Vec<Painted>, RunError> {
+/// layers a screen is covered with, to be [`resolve`]d for a frame
+/// (`drawland-grid` paints them).
+pub fn paint(grammar: &Grammar, output: &Output, inputs: Inputs, draw: &Task) -> Result<Vec<Layer>, RunError> {
     if grammar.output.screen.is_none() {
         return Err(RunError::Plan("paint: the output is paper; give it a screen, output({ screen: { kind, width, height } })".into()));
     }
@@ -226,15 +320,16 @@ enum Want<'a> {
     /// A view's groups, handed back for its page to write.
     Collect(&'a mut Collected),
     /// The paint entries' geometry, for a screen.
-    Paint(&'a mut Vec<Painted>),
+    Paint(&'a mut Vec<Layer>),
 }
 
 /// Each paint entry's geometry, read from the evaluated graph.
-fn painted(grammar: &Grammar, values: &BTreeMap<Name, Value>, page: f64) -> Result<Vec<Painted>, RunError> {
+fn painted(grammar: &Grammar, values: &BTreeMap<Name, Value>, page: f64) -> Result<Vec<Layer>, RunError> {
     use crate::paint::Look;
     let mut out = Vec::new();
     for p in &grammar.paint {
-        let shape = match (&p.from.module, &p.look) {
+        let mut tags = Vec::new();
+        let shape = match (&p.from.module, p.look.base()) {
             (Some(module), Look::Line(_)) => {
                 let value = module_output(module, &p.from.name.name, values, grammar)?;
                 let mut unused = BTreeMap::new();
@@ -251,19 +346,17 @@ fn painted(grammar: &Grammar, values: &BTreeMap<Name, Value>, page: f64) -> Resu
                     Look::Fill(_) => PaintShape::Area(value.area(&p.from.name)?.clone()),
                     Look::Line(_) => PaintShape::Lines(value.lines(&p.from.name)?.clone()),
                     Look::Text(t) => {
-                        let mut names = crate::labels::named(value.features(&p.from.name)?, &t.keys, page);
-                        if t.upper {
-                            for n in &mut names {
-                                n.text = n.text.to_uppercase();
-                            }
+                        let features = value.features(&p.from.name)?;
+                        if p.look.reads().or(p.shown.reads()).feature {
+                            tags = features.iter().map(|f| f.tags.clone()).collect();
                         }
-                        PaintShape::Names(names)
+                        PaintShape::Names(crate::labels::named(features, &t.keys, page))
                     }
                 }
             }
             (Some(module), _) => return Err(RunError::Plan(format!("paint {:?}: {module}.{} is lines", p.id, p.from.name.name))),
         };
-        out.push(Painted { id: p.id.clone(), look: p.look.clone(), halo: p.halo, shape });
+        out.push(Layer { id: p.id.clone(), style: p.look.clone(), shown: p.shown.clone(), halo: p.halo, shape, tags: std::sync::Arc::new(tags) });
     }
     Ok(out)
 }
@@ -1634,6 +1727,64 @@ fn clip_for(grammar: &Grammar, id: &str) -> Clip {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A layer of place names in a hierarchy: a city large, a suburb
+    /// smaller and only near, a hamlet never; by Mapbox expressions.
+    #[test]
+    fn a_layer_of_names_resolves_by_zoom_and_class() {
+        use crate::expr::Frame;
+        use crate::labels::{Named, Shape};
+        use crate::paint::{Look, Shown, Style};
+        let style = Style::new(
+            "text",
+            serde_json::json!({
+                "font": ["match", ["get", "class"], "city", ["step", ["zoom"], "spleen-8x16", 12, "spleen-12x24"], "spleen-5x8"],
+                "upper": ["==", ["get", "class"], "city"],
+            }),
+        )
+        .unwrap();
+        let shown = Shown::new(Some(4.0), None, Some(serde_json::json!(["any", ["==", ["get", "class"], "city"], ["all", ["==", ["get", "class"], "suburb"], [">=", ["zoom"], 12]]]))).unwrap();
+        let tags: Vec<crate::osm::Tags> = ["city", "suburb", "hamlet"].iter().map(|c| [("class".to_string(), c.to_string())].into_iter().collect()).collect();
+        let named = |text: &str, feature: usize| Named { text: text.into(), rank: 1.0, extent: 1.0, shape: Shape::Pin((0.0, 0.0).into()), feature };
+        let layer = Layer {
+            id: "places".into(),
+            style,
+            shown,
+            halo: Default::default(),
+            shape: PaintShape::Names(vec![named("Roma", 0), named("Monti", 1), named("Borgo", 2)]),
+            tags: std::sync::Arc::new(tags),
+        };
+        let fonts = |zoom: f64| -> Vec<(String, Vec<String>)> {
+            resolve(vec![layer.clone()], Frame::at_zoom(zoom))
+                .into_iter()
+                .map(|p| match (p.look, p.shape) {
+                    (Look::Text(t), PaintShape::Names(ns)) => (t.font, ns.into_iter().map(|n| n.text).collect()),
+                    _ => unreachable!(),
+                })
+                .collect()
+        };
+        assert!(fonts(3.0).is_empty(), "below minzoom");
+        assert_eq!(fonts(8.0), vec![("spleen-8x16".to_string(), vec!["ROMA".to_string()])]);
+        // Near, the suburb comes in, smaller: two layers in the one's place,
+        // the larger letters over (last).
+        assert_eq!(
+            fonts(13.0),
+            vec![("spleen-5x8".to_string(), vec!["Monti".to_string()]), ("spleen-12x24".to_string(), vec!["ROMA".to_string()])]
+        );
+    }
+
+    #[test]
+    fn a_style_is_checked_as_written() {
+        use crate::paint::Style;
+        let err = Style::new("text", serde_json::json!({ "font": ["step", ["zoom"], "spleen-5x8", 10, "spleen-99"] })).unwrap_err();
+        assert!(err.contains("spleen-99"), "{err}");
+        assert!(Style::new("text", serde_json::json!({ "keys": ["get", "name"] })).unwrap_err().contains("read once"));
+        // A number from a ramp is rounded where pixels are counted.
+        let line = Style::new("line", serde_json::json!({ "width": ["interpolate", ["linear"], ["zoom"], 10, 1, 20, 4] })).unwrap();
+        let cx = crate::expr::Context { frame: crate::expr::Frame::at_zoom(15.0), tags: None };
+        assert!(matches!(line.resolve(&cx), Some(crate::paint::Look::Line(l)) if l.width == 3));
+    }
+
     use crate::profile::OutputSpec;
     use crate::grammar::from_yaml;
     use crate::units::{Mm, Scale};

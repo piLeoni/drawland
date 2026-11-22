@@ -17,6 +17,12 @@
 //! the ground one of them spans (`scale: "3m"`). A character is one unit
 //! across and two down (a row is as tall as two characters are wide), so a
 //! circle is still round on the screen.
+//!
+//! A look's property can be a Mapbox expression ([`crate::expr`]): a font by
+//! the zoom, a size by the feature's class. A [`Style`] holds the look as
+//! written and gives the [`Look`] of a frame (and of a feature) when drawn;
+//! a `paint` entry can also be shown only between two zooms (`minzoom`,
+//! `maxzoom`) or for the features a `filter` keeps.
 
 use crate::grammar::{At, Target};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -525,6 +531,17 @@ impl Look {
         }
     }
 
+    /// A `fill`, `line` or `text` look read from its properties.
+    pub fn from_json(kind: &str, body: serde_json::Value) -> Result<Look, String> {
+        let e = |e: serde_json::Error| e.to_string();
+        Ok(match kind {
+            "fill" => Look::Fill(serde_json::from_value(body).map_err(e)?),
+            "line" => Look::Line(serde_json::from_value(body).map_err(e)?),
+            "text" => Look::Text(serde_json::from_value(body).map_err(e)?),
+            other => return Err(format!("a look is fill, line or text, not {other}")),
+        })
+    }
+
     pub fn to_json(&self) -> serde_json::Value {
         match self {
             Look::Fill(f) => serde_json::to_value(f),
@@ -535,6 +552,209 @@ impl Look {
     }
 }
 
+/// A look as the graph writes it: each property a value or an expression
+/// ([`crate::expr`]). Resolved for a frame, and for a feature when one
+/// reads its tags, into a [`Look`]; the looks a frame resolves to are kept,
+/// so a frame costs the evaluation of its expressions and no more.
+#[derive(Debug, Clone)]
+pub struct Style {
+    kind: &'static str,
+    /// The properties as written.
+    raw: serde_json::Map<String, serde_json::Value>,
+    /// Those that are expressions.
+    exprs: Vec<(String, crate::expr::Expr)>,
+    /// The look of the written values alone, each expression's property at
+    /// its default: the look itself when there is none.
+    base: Look,
+    reads: crate::expr::Reads,
+    resolved: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Option<Look>>>>,
+}
+
+impl PartialEq for Style {
+    fn eq(&self, other: &Style) -> bool {
+        self.kind == other.kind && self.raw == other.raw
+    }
+}
+
+/// The properties read once, when the names are, not each frame: never an
+/// expression.
+const ONCE: &[&str] = &["keys"];
+
+impl Style {
+    /// A `fill`, `line` or `text` look as written (an object). Each
+    /// expression's written outputs are checked as the property's values.
+    pub fn new(kind: &str, body: serde_json::Value) -> Result<Style, String> {
+        use crate::expr::Expr;
+        let kind = match kind {
+            "fill" => "fill",
+            "line" => "line",
+            "text" => "text",
+            other => return Err(format!("a look is fill, line or text, not {other}")),
+        };
+        let raw = match body {
+            serde_json::Value::Object(m) => m,
+            serde_json::Value::Null => serde_json::Map::new(),
+            other => return Err(format!("{kind}: an object of properties, got {other}")),
+        };
+        let mut literal = serde_json::Map::new();
+        let mut exprs = Vec::new();
+        for (k, v) in &raw {
+            if Expr::is_expression(v) {
+                if ONCE.contains(&k.as_str()) {
+                    return Err(format!("{kind}.{k} is read once, with the names: a value, not an expression"));
+                }
+                let e = Expr::parse(v).map_err(|m| format!("{kind}.{k}: {m}"))?;
+                exprs.push((k.clone(), e));
+            } else {
+                literal.insert(k.clone(), v.clone());
+            }
+        }
+        let parse = |m: serde_json::Map<String, serde_json::Value>| Look::from_json(kind, serde_json::Value::Object(m));
+        let base = parse(literal.clone()).map_err(|m| format!("{kind}: {m}"))?;
+        // Every written output must be a value of its property. (Whether
+        // they make a look together depends on the frame: one that does not
+        // is not drawn.)
+        let mut reads = crate::expr::Reads::default();
+        for (k, e) in &exprs {
+            reads = reads.or(e.reads());
+            for out in e.outputs().unwrap_or_default().into_iter().filter(|o| !o.is_null()) {
+                let mut one = literal.clone();
+                one.insert(k.clone(), out.clone());
+                parse(one).and_then(|l| l.validate()).map_err(|m| format!("{kind}.{k}: {m}"))?;
+            }
+        }
+        if exprs.is_empty() {
+            base.validate().map_err(|m| format!("{kind}: {m}"))?;
+        }
+        Ok(Style { kind, raw, exprs, base, reads, resolved: Default::default() })
+    }
+
+    /// A style of one look, no expression in it.
+    pub fn fixed(look: Look) -> Style {
+        let raw = match look.to_json() {
+            serde_json::Value::Object(m) => m,
+            _ => serde_json::Map::new(),
+        };
+        Style { kind: look.key(), raw, exprs: Vec::new(), base: look, reads: Default::default(), resolved: Default::default() }
+    }
+
+    /// `fill`, `line` or `text`.
+    pub fn key(&self) -> &'static str {
+        self.kind
+    }
+
+    /// The look as written, expressions and all.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::Value::Object(self.raw.clone())
+    }
+
+    /// What its expressions read.
+    pub fn reads(&self) -> crate::expr::Reads {
+        self.reads
+    }
+
+    /// The look of its written values, each expression at its property's
+    /// default: what is read once (a text's `keys`).
+    pub fn base(&self) -> &Look {
+        &self.base
+    }
+
+    /// The look in `cx`; none when what it resolves to is no look (a fill
+    /// with two patterns). A property whose expression gives `null`, or a
+    /// value it cannot take, keeps its default; a number is rounded for a
+    /// property that counts whole pixels.
+    pub fn resolve(&self, cx: &crate::expr::Context) -> Option<Look> {
+        if self.exprs.is_empty() {
+            return Some(self.base.clone());
+        }
+        let values: Vec<serde_json::Value> = self.exprs.iter().map(|(_, e)| e.eval(cx)).collect();
+        let key = serde_json::Value::Array(values.clone()).to_string();
+        let mut resolved = self.resolved.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(look) = resolved.get(&key) {
+            return look.clone();
+        }
+        let literal: serde_json::Map<_, _> = self.raw.iter().filter(|(k, _)| !self.exprs.iter().any(|(e, _)| e == *k)).map(|(k, v)| (k.clone(), v.clone())).collect();
+        let fits = |k: &str, v: &serde_json::Value| {
+            let mut one = literal.clone();
+            one.insert(k.to_string(), v.clone());
+            Look::from_json(self.kind, serde_json::Value::Object(one)).is_ok()
+        };
+        let mut all = literal.clone();
+        for ((k, _), v) in self.exprs.iter().zip(values) {
+            if v.is_null() {
+                continue;
+            }
+            if fits(k, &v) {
+                all.insert(k.clone(), v);
+            } else if let Some(n) = v.as_f64().map(|n| serde_json::json!(n.round() as i64)).filter(|n| fits(k, n)) {
+                all.insert(k.clone(), n);
+            }
+        }
+        let look = Look::from_json(self.kind, serde_json::Value::Object(all)).ok().filter(|l| l.validate().is_ok());
+        if resolved.len() > 256 {
+            resolved.clear();
+        }
+        resolved.insert(key, look.clone());
+        look
+    }
+}
+
+/// When a `paint` entry is shown, besides its look: between two zooms, and
+/// for the features its filter keeps (Mapbox's `minzoom`, `maxzoom`,
+/// `filter`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Shown {
+    /// Shown from this zoom.
+    pub minzoom: Option<f64>,
+    /// Shown below this zoom.
+    pub maxzoom: Option<f64>,
+    /// The filter as written, and parsed.
+    pub filter: Option<(serde_json::Value, crate::expr::Expr)>,
+}
+
+impl Shown {
+    /// From a paint entry's `minzoom`, `maxzoom` and `filter`.
+    pub fn new(minzoom: Option<f64>, maxzoom: Option<f64>, filter: Option<serde_json::Value>) -> Result<Shown, String> {
+        for (k, z) in [("minzoom", minzoom), ("maxzoom", maxzoom)] {
+            if z.is_some_and(|z| !(0.0..=30.0).contains(&z)) {
+                return Err(format!("{k} is a zoom, 0 to 30"));
+            }
+        }
+        if let (Some(a), Some(b)) = (minzoom, maxzoom) {
+            if a >= b {
+                return Err(format!("minzoom {a} is below maxzoom {b}"));
+            }
+        }
+        let filter = match filter {
+            None | Some(serde_json::Value::Null) => None,
+            Some(f) if crate::expr::Expr::is_expression(&f) || f.is_boolean() => {
+                let e = crate::expr::Expr::parse(&f).map_err(|m| format!("filter: {m}"))?;
+                Some((f, e))
+            }
+            Some(f) => return Err(format!("filter is an expression, [\"==\", [\"get\", \"class\"], \"city\"] say, got {f}")),
+        };
+        Ok(Shown { minzoom, maxzoom, filter })
+    }
+
+    /// Whether a layer is shown at `zoom` at all.
+    pub fn at(&self, zoom: f64) -> bool {
+        self.minzoom.is_none_or(|z| zoom >= z) && self.maxzoom.is_none_or(|z| zoom < z)
+    }
+
+    /// Whether the filter keeps what `cx` is about (true without one).
+    pub fn keeps(&self, cx: &crate::expr::Context) -> bool {
+        self.filter.as_ref().is_none_or(|(_, e)| !matches!(e.eval(cx), serde_json::Value::Null | serde_json::Value::Bool(false)))
+    }
+
+    pub fn reads(&self) -> crate::expr::Reads {
+        self.filter.as_ref().map(|(_, e)| e.reads()).unwrap_or_default()
+    }
+
+    pub fn is_default(&self) -> bool {
+        *self == Shown::default()
+    }
+}
+
 /// One `paint` entry: a layer of the screen, painted over the ones before.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Paint {
@@ -542,7 +762,8 @@ pub struct Paint {
     /// An area (`$areas.x`, a module's area), lines (`$lines.x`,
     /// `roads.centerlines`) or features (`$features.x`).
     pub from: Target,
-    pub look: Look,
+    pub look: Style,
+    pub shown: Shown,
     pub halo: Halo,
     pub at: Option<At>,
 }

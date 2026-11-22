@@ -1045,6 +1045,34 @@ fn a_screen_is_painted_layer_by_layer() {
 }
 
 #[test]
+fn a_look_can_be_a_mapbox_expression() {
+    let g = evaluate(
+        "output({ lat: 45.43, lng: 12.33, screen: { kind: 'bitmap', width: 100, height: 30 } })\n\
+         paint({ id: 'places', from: features.tiles('place:*'), minzoom: 4, \
+           filter: ['any', ['==', ['get', 'class'], 'city'], ['>=', ['zoom'], 12]], \
+           text: { font: ['match', ['get', 'class'], 'city', ['step', ['zoom'], 'spleen-8x16', 12, 'spleen-12x24'], 'spleen-5x8'] } })\n",
+    )
+    .unwrap();
+    let p = &g.paint[0];
+    assert_eq!(p.shown.minzoom, Some(4.0));
+    assert!(p.look.reads().feature && p.look.reads().frame);
+    // The graph's JSON keeps the expressions as written, and reads back the same.
+    let json = g.to_json();
+    assert_eq!(json["paint"][0]["text"]["font"][0], "match");
+    assert_eq!(json["paint"][0]["filter"][0], "any");
+    let back = drawland_core::grammar::Grammar::from_json(&json.to_string()).unwrap();
+    assert_eq!(back.paint, g.paint);
+    // A font no screen has is said, from within the expression.
+    let e = err("output({ lat: 0, lng: 0, screen: { kind: 'bitmap', width: 80, height: 24 } })\n\
+         paint({ id: 'x', from: features.tiles('place:*'), text: { font: ['step', ['zoom'], 'spleen-5x8', 9, 'comic-sans'] } })\n");
+    assert!(e.message.contains("comic-sans"), "{}", e.message);
+    // Areas keep no tags: a fill that reads them is told so.
+    let e = err("output({ lat: 0, lng: 0, screen: { kind: 'bitmap', width: 80, height: 24 } })\n\
+         paint({ id: 'x', from: areas.polygons(features.tiles('water')), fill: { pattern: ['match', ['get', 'class'], 'lake', 'dots', 'waves'] } })\n");
+    assert!(e.message.contains("only names keep"), "{}", e.message);
+}
+
+#[test]
 fn paint_says_what_it_takes() {
     let screen = "output({ lat: 0, lng: 0, screen: { kind: 'text', width: 80, height: 24 } })\n";
     let e = err(&format!("{screen}paint({{ id: 'x', from: areas.polygons(features.tiles('water')), line: {{}} }})\n"));

@@ -29,7 +29,10 @@ const INK = {
   street: "#8c8a84",
   road: "#b8741a",
   rail: "#8a5cb8",
-  name: "#2a2a2a",
+  // A street's name: under the places'.
+  streetName: "#6e6c66",
+  // A quarter's name: the place's colour, quieter.
+  quarter: "#7a5a3a",
   place: "#a8361a",
   waterName: "#2b5f96",
 }
@@ -70,11 +73,38 @@ paint({ id: "rail", from: rail, line: { style: "double", color: INK.rail } })
 paint({ id: "roads", from: major, line: { style: "box", color: INK.road } })
 
 // Names: places first (a mark, the name beside it), then water, then streets.
-paint({ id: "street_names", from: features.tiles("road_names"), text: { color: INK.name, spacing: 50 } })
-paint({ id: "water_names", from: features.tiles("water_name:*"), text: { color: INK.waterName } })
+// The names in a hierarchy, by the zoom and what is named (Mapbox
+// expressions; the zoom counts characters, a character being some eight
+// pixels, so three below a pixel map's): from far the oceans and the
+// capitals, nearer the cities in capitals with a ◆, their quarters in
+// quieter letters as they come in.
+paint({
+  id: "street_names",
+  from: features.tiles("road_names"),
+  minzoom: 11,
+  filter: ["!=", ["get", "class"], "ferry"],
+  text: { color: INK.streetName, spacing: 50 },
+})
+paint({
+  id: "water_names",
+  from: features.tiles("water_name:*"),
+  filter: ["any", ["match", ["get", "class"], ["ocean", "sea"], true, false], [">=", ["zoom"], 6]],
+  text: { color: INK.waterName, upper: ["==", ["get", "class"], "ocean"] },
+})
 paint({
   id: "places",
   from: features.tiles("place:city,town,village,suburb,quarter,neighbourhood,island"),
-  text: { upper: true, marker: "◆", color: INK.place, padding: 2 },
+  filter: ["case",
+    ["==", ["get", "capital"], 2], true,
+    ["==", ["get", "class"], "city"], [">=", ["zoom"], 1],
+    ["==", ["get", "class"], "town"], [">=", ["zoom"], 5],
+    ["match", ["get", "class"], ["village", "suburb", "island"], true, false], [">=", ["zoom"], 8],
+    [">=", ["zoom"], 11]],
+  text: {
+    upper: ["match", ["get", "class"], ["city", "town"], true, false],
+    marker: ["match", ["get", "class"], "city", "◆", "town", "◇", "village", "·", null],
+    color: ["match", ["get", "class"], ["city", "town", "village"], INK.place, INK.quarter],
+    padding: 2,
+  },
   halo: [1, 0],
 })

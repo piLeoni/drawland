@@ -413,6 +413,7 @@ impl Drawer {
     /// Off web Mercator, names are placed afresh.
     pub fn paint_recalling(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress, recall: &mut drawland_grid::Recall) -> Result<Painting, String> {
         let (output, screen, layers) = self.painted(grammar, place, dir, progress)?;
+        let layers = resolved(&output, layers);
         let origin = drawland_grid::origin(&output, &screen);
         let picture = match drawland_grid::View::of(&output, screen) {
             Some(view) => recall.render(&view, &layers),
@@ -429,6 +430,7 @@ impl Drawer {
     /// `names_past_rim`, the names run on past it, not cut.
     pub fn paint_globe(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress, radius: f64, names_past_rim: bool) -> Result<Painting, String> {
         let (output, screen, layers) = self.painted(grammar, place, dir, progress)?;
+        let layers = resolved(&output, layers);
         let origin = drawland_grid::origin(&output, &screen);
         let mut picture = drawland_grid::render(&screen, origin, &layers);
         // The names alone, placed where they are with the map: placing
@@ -453,8 +455,9 @@ impl Drawer {
         Ok(drawland_grid::Scene::new(view, layers))
     }
 
-    /// The graph evaluated for its screen: each `paint` entry's geometry.
-    fn painted(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress) -> Result<(Output, drawland_core::paint::Screen, Vec<drawland_core::grammar_run::Painted>), String> {
+    /// The graph evaluated for its screen: each `paint` entry's geometry,
+    /// its look as written.
+    fn painted(&self, grammar: &Grammar, place: &Place, dir: &Path, progress: &dyn Progress) -> Result<(Output, drawland_core::paint::Screen, Vec<drawland_core::grammar_run::Layer>), String> {
         let Some(screen) = grammar.output.screen else {
             return Err("this profile draws paper: give its output a screen, output({ screen: { kind, width, height } })".into());
         };
@@ -705,4 +708,10 @@ fn read(path: &Path) -> Result<String, String> {
 /// A source's last path segment, for its row.
 fn short(src: &str) -> String {
     src.trim_end_matches('/').rsplit('/').next().unwrap_or(src).to_string()
+}
+
+/// The layers as `output` shows them: each look resolved at its zoom (at
+/// its centre).
+fn resolved(output: &Output, layers: Vec<drawland_core::grammar_run::Layer>) -> Vec<drawland_core::grammar_run::Painted> {
+    drawland_core::grammar_run::resolve(layers, drawland_core::expr::Frame::new(output.scale / 1000.0, output.center.1))
 }

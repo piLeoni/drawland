@@ -244,7 +244,7 @@ pub fn render_hinted(screen: &Screen, origin: (i64, i64), layers: &[Painted], hi
                     let f = font::font(&t.font)?;
                     (f.width as i64, f.height as i64)
                 };
-                Some(place::Layer { index, paint: t, names, metrics: place::Metrics { letter, unit, size } })
+                Some(place::Layer { index, id: &l.id, paint: t, names, metrics: place::Metrics { letter, unit, size } })
             }
             _ => None,
         })
