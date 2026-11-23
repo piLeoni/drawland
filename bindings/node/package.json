@@ -38,14 +38,15 @@
     "node": ">= 18"
   },
   "optionalDependencies": {
-    "drawland-darwin-arm64": "0.4.0",
-    "drawland-darwin-x64": "0.4.0",
-    "drawland-linux-x64-gnu": "0.4.0",
-    "drawland-linux-arm64-gnu": "0.4.0",
-    "drawland-win32-x64-msvc": "0.4.0"
+    "@drawland/native-darwin-arm64": "0.4.0",
+    "@drawland/native-darwin-x64": "0.4.0",
+    "@drawland/native-linux-x64-gnu": "0.4.0",
+    "@drawland/native-linux-arm64-gnu": "0.4.0",
+    "@drawland/native-win32-x64-msvc": "0.4.0"
   },
   "napi": {
     "binaryName": "drawland",
+    "packageName": "@drawland/native",
     "targets": [
       "aarch64-apple-darwin",
       "x86_64-apple-darwin",

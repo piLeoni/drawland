@@ -92,8 +92,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-android-arm64')
-        const bindingPackageVersion = require('drawland-android-arm64/package.json').version
+        const binding = require('@drawland/native-android-arm64')
+        const bindingPackageVersion = require('@drawland/native-android-arm64/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -108,8 +108,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-android-arm-eabi')
-        const bindingPackageVersion = require('drawland-android-arm-eabi/package.json').version
+        const binding = require('@drawland/native-android-arm-eabi')
+        const bindingPackageVersion = require('@drawland/native-android-arm-eabi/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -129,8 +129,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-win32-x64-gnu')
-          const bindingPackageVersion = require('drawland-win32-x64-gnu/package.json').version
+          const binding = require('@drawland/native-win32-x64-gnu')
+          const bindingPackageVersion = require('@drawland/native-win32-x64-gnu/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -145,8 +145,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-win32-x64-msvc')
-          const bindingPackageVersion = require('drawland-win32-x64-msvc/package.json').version
+          const binding = require('@drawland/native-win32-x64-msvc')
+          const bindingPackageVersion = require('@drawland/native-win32-x64-msvc/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -162,8 +162,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-win32-ia32-msvc')
-        const bindingPackageVersion = require('drawland-win32-ia32-msvc/package.json').version
+        const binding = require('@drawland/native-win32-ia32-msvc')
+        const bindingPackageVersion = require('@drawland/native-win32-ia32-msvc/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -178,8 +178,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-win32-arm64-msvc')
-        const bindingPackageVersion = require('drawland-win32-arm64-msvc/package.json').version
+        const binding = require('@drawland/native-win32-arm64-msvc')
+        const bindingPackageVersion = require('@drawland/native-win32-arm64-msvc/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -197,8 +197,8 @@ function requireNative() {
       loadErrors.push(e)
     }
     try {
-      const binding = require('drawland-darwin-universal')
-      const bindingPackageVersion = require('drawland-darwin-universal/package.json').version
+      const binding = require('@drawland/native-darwin-universal')
+      const bindingPackageVersion = require('@drawland/native-darwin-universal/package.json').version
       if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
         throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
       }
@@ -213,8 +213,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-darwin-x64')
-        const bindingPackageVersion = require('drawland-darwin-x64/package.json').version
+        const binding = require('@drawland/native-darwin-x64')
+        const bindingPackageVersion = require('@drawland/native-darwin-x64/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -229,8 +229,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-darwin-arm64')
-        const bindingPackageVersion = require('drawland-darwin-arm64/package.json').version
+        const binding = require('@drawland/native-darwin-arm64')
+        const bindingPackageVersion = require('@drawland/native-darwin-arm64/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -249,8 +249,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-freebsd-x64')
-        const bindingPackageVersion = require('drawland-freebsd-x64/package.json').version
+        const binding = require('@drawland/native-freebsd-x64')
+        const bindingPackageVersion = require('@drawland/native-freebsd-x64/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -265,8 +265,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-freebsd-arm64')
-        const bindingPackageVersion = require('drawland-freebsd-arm64/package.json').version
+        const binding = require('@drawland/native-freebsd-arm64')
+        const bindingPackageVersion = require('@drawland/native-freebsd-arm64/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -281,8 +281,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-freebsd-ppc64')
-        const bindingPackageVersion = require('drawland-freebsd-ppc64/package.json').version
+        const binding = require('@drawland/native-freebsd-ppc64')
+        const bindingPackageVersion = require('@drawland/native-freebsd-ppc64/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -302,8 +302,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-linux-x64-musl')
-          const bindingPackageVersion = require('drawland-linux-x64-musl/package.json').version
+          const binding = require('@drawland/native-linux-x64-musl')
+          const bindingPackageVersion = require('@drawland/native-linux-x64-musl/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -318,8 +318,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-linux-x64-gnu')
-          const bindingPackageVersion = require('drawland-linux-x64-gnu/package.json').version
+          const binding = require('@drawland/native-linux-x64-gnu')
+          const bindingPackageVersion = require('@drawland/native-linux-x64-gnu/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -336,8 +336,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-linux-arm64-musl')
-          const bindingPackageVersion = require('drawland-linux-arm64-musl/package.json').version
+          const binding = require('@drawland/native-linux-arm64-musl')
+          const bindingPackageVersion = require('@drawland/native-linux-arm64-musl/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -352,8 +352,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-linux-arm64-gnu')
-          const bindingPackageVersion = require('drawland-linux-arm64-gnu/package.json').version
+          const binding = require('@drawland/native-linux-arm64-gnu')
+          const bindingPackageVersion = require('@drawland/native-linux-arm64-gnu/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -370,8 +370,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-linux-arm-musleabihf')
-          const bindingPackageVersion = require('drawland-linux-arm-musleabihf/package.json').version
+          const binding = require('@drawland/native-linux-arm-musleabihf')
+          const bindingPackageVersion = require('@drawland/native-linux-arm-musleabihf/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -386,8 +386,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-linux-arm-gnueabihf')
-          const bindingPackageVersion = require('drawland-linux-arm-gnueabihf/package.json').version
+          const binding = require('@drawland/native-linux-arm-gnueabihf')
+          const bindingPackageVersion = require('@drawland/native-linux-arm-gnueabihf/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -404,8 +404,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-linux-loong64-musl')
-          const bindingPackageVersion = require('drawland-linux-loong64-musl/package.json').version
+          const binding = require('@drawland/native-linux-loong64-musl')
+          const bindingPackageVersion = require('@drawland/native-linux-loong64-musl/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -420,8 +420,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-linux-loong64-gnu')
-          const bindingPackageVersion = require('drawland-linux-loong64-gnu/package.json').version
+          const binding = require('@drawland/native-linux-loong64-gnu')
+          const bindingPackageVersion = require('@drawland/native-linux-loong64-gnu/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -438,8 +438,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-linux-riscv64-musl')
-          const bindingPackageVersion = require('drawland-linux-riscv64-musl/package.json').version
+          const binding = require('@drawland/native-linux-riscv64-musl')
+          const bindingPackageVersion = require('@drawland/native-linux-riscv64-musl/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -454,8 +454,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('drawland-linux-riscv64-gnu')
-          const bindingPackageVersion = require('drawland-linux-riscv64-gnu/package.json').version
+          const binding = require('@drawland/native-linux-riscv64-gnu')
+          const bindingPackageVersion = require('@drawland/native-linux-riscv64-gnu/package.json').version
           if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -471,8 +471,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-linux-ppc64-gnu')
-        const bindingPackageVersion = require('drawland-linux-ppc64-gnu/package.json').version
+        const binding = require('@drawland/native-linux-ppc64-gnu')
+        const bindingPackageVersion = require('@drawland/native-linux-ppc64-gnu/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -487,8 +487,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-linux-s390x-gnu')
-        const bindingPackageVersion = require('drawland-linux-s390x-gnu/package.json').version
+        const binding = require('@drawland/native-linux-s390x-gnu')
+        const bindingPackageVersion = require('@drawland/native-linux-s390x-gnu/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -507,8 +507,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-openharmony-arm64')
-        const bindingPackageVersion = require('drawland-openharmony-arm64/package.json').version
+        const binding = require('@drawland/native-openharmony-arm64')
+        const bindingPackageVersion = require('@drawland/native-openharmony-arm64/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -523,8 +523,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-openharmony-x64')
-        const bindingPackageVersion = require('drawland-openharmony-x64/package.json').version
+        const binding = require('@drawland/native-openharmony-x64')
+        const bindingPackageVersion = require('@drawland/native-openharmony-x64/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -539,8 +539,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('drawland-openharmony-arm')
-        const bindingPackageVersion = require('drawland-openharmony-arm/package.json').version
+        const binding = require('@drawland/native-openharmony-arm')
+        const bindingPackageVersion = require('@drawland/native-openharmony-arm/package.json').version
         if (bindingPackageVersion !== '0.4.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -678,16 +678,16 @@ if (!nativeBinding || forceWasi) {
     let candidateError = null
     let candidateFailed = false
     try {
-      candidateError = __napiWasiResolveCandidate('drawland-wasm32-wasi', true, undefined)
+      candidateError = __napiWasiResolveCandidate('@drawland/native-wasm32-wasi', true, undefined)
       candidateFailed = candidateError !== null
       if (!candidateFailed) {
         if (process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
-          const bindingPackageVersion = require('drawland-wasm32-wasi/package.json').version
+          const bindingPackageVersion = require('@drawland/native-wasm32-wasi/package.json').version
           if (bindingPackageVersion !== '0.4.0') {
             throw new Error(`WASI binding package version mismatch, expected 0.4.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
         }
-        wasiBinding = require('drawland-wasm32-wasi')
+        wasiBinding = require('@drawland/native-wasm32-wasi')
         nativeBinding = wasiBinding
         __napiLoadedBindingTarget = 'wasm32-wasi'
         wasiBindingLoaded = true

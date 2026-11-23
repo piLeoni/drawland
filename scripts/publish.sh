@@ -6,8 +6,9 @@
 #   scripts/publish.sh <run-id> [<run-id> …]     # gh run list --workflow build.yml
 #   scripts/publish.sh --npm <run-id> …          # npm only
 #
-# On npm each platform's addon is a package of its own (`drawland-darwin-arm64`,
-# `drawland-linux-x64-gnu`, …, made here by `napi create-npm-dirs`), and
+# On npm each platform's addon is a package of its own, in the `@drawland`
+# organisation (`@drawland/native-darwin-arm64`, `@drawland/native-linux-x64-gnu`,
+# …, named by `napi.packageName`, made here by `napi create-npm-dirs`), and
 # `drawland` names them all as optional dependencies: npm installs only the
 # one for the machine, about 25 MB, not all five. Their versions are the one
 # in bindings/node/package.json, which its `optionalDependencies` must match.
